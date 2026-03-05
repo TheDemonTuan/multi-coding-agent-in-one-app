@@ -38,7 +38,7 @@ dist-electron/
 electron-*-error.log
 electron-*.log
 
-# Internal files
+# Internal/Documentation files (keep only README.md)
 FIX_SUMMARY.md
 RELEASE_NOTES_*.md
 REPO_METADATA.md
@@ -47,3 +47,11 @@ ROADMAP.md
 SECURITY.md
 RELEASE_GUIDE.md
 .repo-metadata.json
+INSTALLATION.md
+CONTRIBUTING.md
+CODE_OF_CONDUCT.md
+SETUP_GUIDE.md
+WELCOME.md
+REPOSITORY_COMPLETE.md
+COPYING
+
