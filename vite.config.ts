@@ -9,7 +9,7 @@ import fs from 'fs';
 function copyPreloadPlugin() {
   return {
     name: 'copy-preload',
-    apply: 'serve',
+    apply: 'serve' as const,
     buildStart() {
       const srcPath = path.join(__dirname, 'src/electron/preload.cjs');
       const destPath = path.join(__dirname, 'dist-electron/preload/preload.cjs');
@@ -42,8 +42,6 @@ export default defineConfig({
             },
           },
         },
-        target: 'electron-main',
-        noBundle: true,
       },
       {
         entry: 'src/electron/preload.cjs',
