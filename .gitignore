@@ -28,6 +28,7 @@ release/
 *.exe
 *.dmg
 *.app
+*.zip
 
 # Build outputs
 dist-electron/
@@ -36,3 +37,13 @@ dist-electron/
 # Dev logs
 electron-*-error.log
 electron-*.log
+
+# Internal files
+FIX_SUMMARY.md
+RELEASE_NOTES_*.md
+REPO_METADATA.md
+PRODUCTION_CHECKLIST.md
+ROADMAP.md
+SECURITY.md
+RELEASE_GUIDE.md
+.repo-metadata.json
