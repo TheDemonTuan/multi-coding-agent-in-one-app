@@ -1,0 +1,454 @@
+/* Modern Workspace Tab Bar - Compact */
+.workspace-tab-bar {
+  display: flex;
+  align-items: center;
+  background: linear-gradient(180deg, #1e1e2e 0%, #181825 100%);
+  border-bottom: 1px solid #313244;
+  padding: 0 8px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  height: 44px;
+  min-height: 44px;
+  gap: 8px;
+}
+
+.tabs-container {
+  display: flex;
+  flex: 1;
+  gap: 4px;
+  overflow-x: auto;
+  scrollbar-width: thin;
+  scrollbar-color: #45475a transparent;
+}
+
+.tabs-container::-webkit-scrollbar {
+  height: 3px;
+}
+
+.tabs-container::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.tabs-container::-webkit-scrollbar-thumb {
+  background: #45475a;
+  border-radius: 2px;
+}
+
+/* Workspace Tab */
+.workspace-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  min-width: 120px;
+  max-width: 180px;
+  height: 32px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px 6px 0 0;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+  user-select: none;
+  box-sizing: border-box;
+}
+
+.workspace-tab::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: transparent;
+  transition: background 0.2s;
+}
+
+.workspace-tab:hover {
+  background: rgba(69, 71, 90, 0.3);
+}
+
+.workspace-tab.active {
+  background: rgba(69, 71, 90, 0.5);
+  border-color: #313244;
+}
+
+.workspace-tab.active::before {
+  background: linear-gradient(90deg, #89b4fa, #b4befe);
+}
+
+/* Tab Icon */
+.tab-icon {
+  font-size: 13px;
+  line-height: 1;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 18px;
+}
+
+/* Tab Name */
+.tab-name {
+  flex: 1;
+  font-size: 12px;
+  font-weight: 500;
+  color: #a6adc8;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: color 0.2s;
+  line-height: 18px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+}
+
+.workspace-tab.active .tab-name {
+  color: #cdd6f4;
+  font-weight: 600;
+}
+
+.workspace-tab:hover .tab-name {
+  color: #bac2de;
+}
+
+/* Tab Close Button */
+.tab-close-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  margin: 0;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  color: #6c7086;
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0;
+  transition: all 0.15s;
+  flex-shrink: 0;
+}
+
+.workspace-tab:hover .tab-close-btn {
+  opacity: 1;
+}
+
+.tab-close-btn:hover {
+  background: rgba(243, 139, 168, 0.2);
+  color: #f38ba8 !important;
+}
+
+/* Action Buttons */
+.tab-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding-left: 8px;
+  border-left: 1px solid #313244;
+}
+
+.action-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  font-size: 14px;
+}
+
+.new-workspace-btn {
+  color: #89b4fa;
+}
+
+.new-workspace-btn:hover {
+  background: rgba(137, 180, 250, 0.15);
+  transform: scale(1.05);
+}
+
+.theme-toggle-btn {
+  color: #f9e2af;
+}
+
+.theme-toggle-btn:hover {
+  background: rgba(249, 226, 175, 0.15);
+  transform: scale(1.05);
+}
+
+.delete-all-btn {
+  color: #f38ba8;
+}
+
+.delete-all-btn:hover {
+  background: rgba(243, 139, 168, 0.15);
+  transform: scale(1.05);
+}
+
+/* Context Menu */
+.context-menu {
+  position: fixed;
+  background: #1e1e2e;
+  border: 1px solid #313244;
+  border-radius: 8px;
+  padding: 6px;
+  min-width: 160px;
+  box-shadow: 
+    0 8px 24px rgba(0, 0, 0, 0.6),
+    0 2px 8px rgba(0, 0, 0, 0.4);
+  z-index: 10000;
+  backdrop-filter: blur(8px);
+  animation: contextMenuFadeIn 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@keyframes contextMenuFadeIn {
+  from {
+    opacity: 0;
+    transform: scale(0.95) translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.context-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  font-size: 13px;
+  color: #cdd6f4;
+  cursor: pointer;
+  border-radius: 6px;
+  transition: all 0.15s;
+  user-select: none;
+}
+
+.context-menu-item:hover {
+  background: rgba(69, 71, 90, 0.5);
+}
+
+.context-menu-item.danger {
+  color: #f38ba8;
+}
+
+.context-menu-item.danger:hover {
+  background: rgba(243, 139, 168, 0.15);
+}
+
+.context-menu-icon {
+  font-size: 14px;
+  width: 18px;
+  text-align: center;
+}
+
+/* Delete Confirmation Modal */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100000;
+  animation: overlayFadeIn 0.15s ease;
+  will-change: opacity;
+}
+
+@keyframes overlayFadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.delete-modal {
+  background: #1e1e2e;
+  border: 1px solid #313244;
+  border-radius: 12px;
+  padding: 24px;
+  min-width: 400px;
+  max-width: 480px;
+  text-align: center;
+  box-shadow: 
+    0 20px 60px rgba(0, 0, 0, 0.5),
+    0 8px 24px rgba(0, 0, 0, 0.3);
+  animation: modalSlideIn 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+  will-change: transform, opacity;
+}
+
+@keyframes modalSlideIn {
+  from {
+    opacity: 0;
+    transform: scale(0.95) translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.delete-modal-icon {
+  font-size: 48px;
+  margin-bottom: 16px;
+}
+
+.delete-modal-title {
+  font-size: 20px;
+  font-weight: 700;
+  color: #cdd6f4;
+  margin: 0 0 12px 0;
+}
+
+.delete-modal-description {
+  font-size: 14px;
+  color: #a6adc8;
+  margin: 0 0 24px 0;
+  line-height: 1.6;
+}
+
+.delete-modal-description strong {
+  color: #f38ba8;
+}
+
+.delete-modal-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+}
+
+.btn-cancel,
+.btn-delete {
+  padding: 10px 24px;
+  font-size: 14px;
+  font-weight: 600;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.btn-cancel {
+  background: #313244;
+  color: #cdd6f4;
+}
+
+.btn-cancel:hover {
+  background: #45475a;
+  transform: translateY(-1px);
+}
+
+.btn-delete {
+  background: linear-gradient(135deg, #f38ba8 0%, #eba0ac 100%);
+  color: #1e1e2e;
+}
+
+.btn-delete:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 16px rgba(243, 139, 168, 0.3);
+}
+
+/* Rename Modal */
+.rename-modal {
+  background: #1e1e2e;
+  border: 1px solid #313244;
+  border-radius: 12px;
+  padding: 24px;
+  min-width: 400px;
+  max-width: 480px;
+  text-align: center;
+  box-shadow: 
+    0 20px 60px rgba(0, 0, 0, 0.5),
+    0 8px 24px rgba(0, 0, 0, 0.3);
+  animation: modalSlideIn 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+  will-change: transform, opacity;
+}
+
+.rename-modal-title {
+  font-size: 20px;
+  font-weight: 700;
+  color: #cdd6f4;
+  margin: 0 0 20px 0;
+}
+
+.rename-input {
+  width: 100%;
+  padding: 12px 16px;
+  font-size: 14px;
+  background: #181825;
+  border: 1px solid #313244;
+  border-radius: 8px;
+  color: #cdd6f4;
+  outline: none;
+  transition: all 0.2s;
+  box-sizing: border-box;
+  margin-bottom: 20px;
+}
+
+.rename-input:focus {
+  border-color: #89b4fa;
+  box-shadow: 0 0 0 3px rgba(137, 180, 250, 0.1);
+}
+
+.rename-modal-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+}
+
+.btn-rename {
+  padding: 10px 24px;
+  font-size: 14px;
+  font-weight: 600;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  background: linear-gradient(135deg, #89b4fa 0%, #b4befe 100%);
+  color: #1e1e2e;
+}
+
+.btn-rename:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 16px rgba(137, 180, 250, 0.3);
+}
+
+.btn-rename:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .workspace-tab {
+    min-width: 100px;
+    padding: 6px 8px;
+  }
+  
+  .tab-name {
+    font-size: 11px;
+  }
+  
+  .workspace-tab .tab-close-btn {
+    opacity: 1;
+  }
+  
+  .delete-modal {
+    min-width: 90%;
+    padding: 20px;
+  }
+}
