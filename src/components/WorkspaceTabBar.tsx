@@ -299,14 +299,6 @@ export const WorkspaceTabBar: React.FC = () => {
         <div className="tab-actions">
           <LayoutSelector compact />
 
-          <button
-            className="action-btn theme-toggle-btn"
-            onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-            title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
-          >
-            {theme === 'dark' ? '🌙' : '☀️'}
-          </button>
-
           {workspaces.length > 0 && (
             <button
               className="action-btn delete-all-btn"

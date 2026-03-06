@@ -175,15 +175,6 @@
   transform: scale(1.05);
 }
 
-.theme-toggle-btn {
-  color: #f9e2af;
-}
-
-.theme-toggle-btn:hover {
-  background: rgba(249, 226, 175, 0.15);
-  transform: scale(1.05);
-}
-
 .delete-all-btn {
   color: #f38ba8;
 }
