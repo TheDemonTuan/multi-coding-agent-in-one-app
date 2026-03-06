@@ -1,7 +1,7 @@
 {
   "name": "tdt-space",
   "productName": "TDT Space",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Multi-Agent Terminal for TDT Vibe Coding",
   "author": "TDT Space Team",
   "main": "dist-electron/main/main.js",

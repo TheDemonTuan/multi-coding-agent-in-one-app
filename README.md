@@ -2,7 +2,7 @@
 
 <div align="center">
 
-![Version](https://img.shields.io/badge/version-1.0.0-blue)
+![Version](https://img.shields.io/badge/version-1.1.0-blue)
 ![GitHub Release](https://img.shields.io/github/v/release/TheDemonTuan/all-agent-in-one)
 ![Electron](https://img.shields.io/badge/Electron-34.5.8-47848F?logo=electron&logoColor=white)
 ![React](https://img.shields.io/badge/React-19.2.4-61DAFB?logo=react&logoColor=black)
@@ -30,6 +30,16 @@
 
 ## ✨ Features
 
+### 🏗️ Modular Architecture (New in v1.1.0)
+- **Restructured Codebase**: Clean separation of concerns with domain-specific modules
+- **Domain-Based Components**: Organized into agents, modals, terminals, ui, and workspaces
+- **Separated IPC Handlers**: Clean architecture with dedicated handler files by domain
+- **Centralized Configuration**: Unified constants, agent configs, and templates
+- **Type-Safe Architecture**: Domain-specific TypeScript definitions for better IDE support
+- **Service Layer**: Business logic separated from UI and IPC handling
+- **Centralized Logging**: Structured logging throughout the application
+- **Barrel Exports**: Clean imports using index.ts pattern across all modules
+
 ### 🖥️ Grid Terminal System
 - **Flexible Layouts**: Choose from 1×1, 2×1, 2×2, 3×2, or 4×4 grid configurations
 - **Independent Panes**: Each terminal pane runs independently with its own process
@@ -52,6 +62,8 @@ Run multiple AI coding agents at the same time:
 - **Command History**: Track and reuse previous commands
 - **Terminal Search**: Find text in terminal output
 - **Custom Themes**: Light and dark mode support
+- **Workspace Navigation**: Quick workspace cycling with keyboard shortcuts (Ctrl+Tab, Ctrl+Shift+Tab)
+- **Vietnamese IME Support**: Native support for Vietnamese input method in Claude Code CLI
 
 ---
 
@@ -209,20 +221,41 @@ bun run preview          # Preview production build
 ```
 all-agent-in-one/
 ├── src/
-│   ├── components/       # React components
-│   │   ├── TerminalGrid.tsx
-│   │   ├── TerminalCell.tsx
-│   │   ├── WorkspaceTabBar.tsx
-│   │   └── ...
-│   ├── stores/          # Zustand state management
-│   │   ├── workspaceStore.ts
-│   │   └── templateStore.ts
-│   ├── hooks/           # Custom React hooks
-│   ├── electron/        # Electron main process
-│   └── types/           # TypeScript definitions
-├── dist/                # Build output
-├── public/              # Static assets
-└── package.json         # Project configuration
+│   ├── components/       # React components (organized by domain)
+│   │   ├── agents/       # Agent-related components
+│   │   ├── modals/       # Modal dialogs
+│   │   ├── terminals/    # Terminal UI components
+│   │   ├── ui/           # Generic UI elements
+│   │   ├── workspaces/   # Workspace management UI
+│   │   └── index.ts      # Barrel exports
+│   ├── config/           # Application configuration
+│   │   ├── agents.ts     # Agent configurations
+│   │   ├── constants.ts  # IPC channels, defaults
+│   │   └── templates.ts  # Layout templates
+│   ├── electron/
+│   │   ├── ipc/          # IPC handlers by domain
+│   │   │   ├── terminal.handlers.ts
+│   │   │   ├── workspace.handlers.ts
+│   │   │   ├── template.handlers.ts
+│   │   │   └── ...
+│   │   └── main.ts       # Electron main process (200 lines)
+│   ├── hooks/            # Custom React hooks
+│   ├── lib/              # Low-level utilities
+│   │   ├── logger.ts     # Centralized logging
+│   │   ├── debounce.ts
+│   │   └── platform.ts
+│   ├── services/         # Business logic layer
+│   │   ├── terminal.service.ts
+│   │   └── workspace.service.ts
+│   ├── stores/           # Zustand state management
+│   └── types/            # TypeScript type definitions
+│       ├── agent.ts
+│       ├── terminal.ts
+│       ├── ipc.ts
+│       └── workspace.ts
+├── dist/                 # Build output
+├── public/               # Static assets
+└── package.json          # Project configuration
 ```
 
 ### Tech Stack
@@ -335,12 +368,23 @@ See the [LICENSE](LICENSE) file for details.
 
 ## 🚀 What's Next?
 
-### Planned for v1.1.0
+### Planned for v1.2.0
 - [ ] Terminal pane resizing (drag to resize)
 - [ ] Custom color themes
 - [ ] Command palette with fuzzy search
 - [ ] Keyboard shortcuts customization
 - [ ] Notifications for long-running commands
+
+### Recent Updates (v1.1.0)
+- ✅ Complete codebase refactor into modular architecture
+- ✅ Domain-based component organization
+- ✅ Extracted IPC handlers into separate files
+- ✅ Added centralized configuration layer
+- ✅ Introduced service layer for business logic
+- ✅ Enhanced type definitions for all domains
+- ✅ Added centralized logging system
+- ✅ Improved workspace navigation with hooks
+- ✅ Vietnamese IME support for Claude Code
 
 ### Future Roadmap
 - [ ] macOS support
