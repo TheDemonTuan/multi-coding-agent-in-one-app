@@ -95,7 +95,7 @@ export const TerminalCell: React.FC<TerminalCellProps> = ({
   const dataBufferRef = useRef<string[]>([]);
   const isInitialFitCompleteRef = useRef(false);
 
-  const { restartTerminal } = useWorkspaceStore();
+  const { restartTerminal, getNextWorkspace, getPreviousWorkspace, setCurrentWorkspace } = useWorkspaceStore();
 
   const listenersRef = useRef<{
     unsubscribeData?: () => void;
@@ -374,6 +374,26 @@ export const TerminalCell: React.FC<TerminalCellProps> = ({
 
     term.attachCustomKeyEventHandler((e: KeyboardEvent) => {
       if (e.type !== 'keydown') return true;
+
+      // Ctrl+Tab: Switch to next workspace
+      if (e.ctrlKey && e.key === 'Tab') {
+        e.preventDefault();
+        const nextWs = getNextWorkspace();
+        if (nextWs) {
+          setCurrentWorkspace(nextWs);
+        }
+        return false;
+      }
+
+      // Ctrl+Shift+Tab: Switch to previous workspace
+      if (e.ctrlKey && e.shiftKey && e.key === 'Tab') {
+        e.preventDefault();
+        const prevWs = getPreviousWorkspace();
+        if (prevWs) {
+          setCurrentWorkspace(prevWs);
+        }
+        return false;
+      }
 
       // Ctrl+C or Ctrl+Shift+C: copy selected text instead of sending SIGINT
       if ((e.ctrlKey || e.metaKey) && e.key === 'c') {
