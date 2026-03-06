@@ -5,7 +5,7 @@ import { TerminalCell } from './TerminalCell';
 import { WorkspaceLayout } from '../types/workspace';
 
 export const TerminalGrid = React.memo(() => {
-  const { workspaces, currentWorkspace, activeTerminalId, setActiveTerminal } = useWorkspaceStore();
+  const { workspaces, currentWorkspace, activeTerminalId, setActiveTerminal, removeTerminal, splitTerminal } = useWorkspaceStore();
 
   // Track which workspaces have been rendered (lazy rendering)
   // Once a workspace is rendered, it stays in the DOM (never unmounted)
@@ -47,7 +47,7 @@ export const TerminalGrid = React.memo(() => {
               display: isActive ? 'flex' : 'none',
             }}
           >
-            {renderWorkspace(workspace, activeTerminalId, setActiveTerminal)}
+            {renderWorkspace(workspace, activeTerminalId, setActiveTerminal, removeTerminal, splitTerminal)}
           </div>
         );
       })}
@@ -61,7 +61,9 @@ TerminalGrid.displayName = 'TerminalGrid';
 const renderWorkspace = (
   workspace: WorkspaceLayout,
   activeTerminalId: string | null,
-  setActiveTerminal: (id: string) => void
+  setActiveTerminal: (id: string) => void,
+  removeTerminal: (terminalId: string) => void,
+  splitTerminal: (terminalId: string, direction: 'horizontal' | 'vertical') => void
 ) => {
   const { columns, rows, terminals } = workspace;
 
@@ -76,6 +78,8 @@ const renderWorkspace = (
               terminal={terminal}
               isActive={terminal.id === activeTerminalId}
               onActivate={() => setActiveTerminal(terminal.id)}
+              onSplit={(direction) => splitTerminal(terminal.id, direction)}
+              onClose={() => removeTerminal(terminal.id)}
             />
           </div>
         </Panel>
@@ -105,6 +109,8 @@ const renderWorkspace = (
                       terminal={terminal}
                       isActive={terminal.id === activeTerminalId}
                       onActivate={() => setActiveTerminal(terminal.id)}
+                      onSplit={(direction) => splitTerminal(terminal.id, direction)}
+                      onClose={() => removeTerminal(terminal.id)}
                     />
                   </div>
                 </Panel>
@@ -142,6 +148,8 @@ const renderWorkspace = (
                   terminal={terminal}
                   isActive={terminal.id === activeTerminalId}
                   onActivate={() => setActiveTerminal(terminal.id)}
+                  onSplit={(direction) => splitTerminal(terminal.id, direction)}
+                  onClose={() => removeTerminal(terminal.id)}
                 />
               </div>
             </Panel>
@@ -167,6 +175,8 @@ const renderWorkspace = (
                   terminal={terminal}
                   isActive={terminal.id === activeTerminalId}
                   onActivate={() => setActiveTerminal(terminal.id)}
+                  onSplit={(direction) => splitTerminal(terminal.id, direction)}
+                  onClose={() => removeTerminal(terminal.id)}
                 />
               </div>
             </Panel>

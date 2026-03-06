@@ -81,6 +81,9 @@ export interface WorkspaceState {
   updateTerminalAgent: (terminalId: string, agentConfig: AgentConfig) => void;
   updateTerminalStatus: (terminalId: string, status: TerminalPane['status']) => void;
   setTerminalProcessId: (terminalId: string, pid: number) => void;
+  removeTerminal: (terminalId: string) => void;
+  splitTerminal: (terminalId: string, direction: 'horizontal' | 'vertical') => void;
+  restartTerminal: (terminalId: string) => void;
 
   // Persistence
   loadWorkspaces: () => void;

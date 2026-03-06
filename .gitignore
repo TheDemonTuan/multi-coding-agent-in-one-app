@@ -55,3 +55,11 @@ WELCOME.md
 REPOSITORY_COMPLETE.md
 COPYING
 
+# AI Assistant & IDE settings
+.claude/
+.cursor/
+.serena/
+
+# Build artifacts
+build/
+

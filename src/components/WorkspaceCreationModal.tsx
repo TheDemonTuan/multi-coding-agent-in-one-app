@@ -5,6 +5,9 @@ import { AgentConfig, AgentType, AgentAllocation, Template, WorkspaceLayout } fr
 import { AgentAllocationSlider } from './AgentAllocationSlider';
 import { TemplateSelector } from './TemplateSelector';
 
+// Import generateId from workspaceStore to avoid duplication
+const generateId = () => Math.random().toString(36).substring(2, 9);
+
 interface WorkspaceCreationModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -12,9 +15,9 @@ interface WorkspaceCreationModalProps {
 }
 
 const agentTypeInfo: { type: AgentType; label: string; description: string; icon: string; color: string }[] = [
-  { type: 'claude-code', label: 'Claude Code', description: "Anthropic's CLI agent", icon: '🤖', color: '#89b4fa' },
-  { type: 'opencode', label: 'OpenCode', description: 'Open source coding agent', icon: '🔓', color: '#fab387' },
-  { type: 'droid', label: 'Droid', description: 'Custom AI agent', icon: '🤖', color: '#cba6f7' },
+  { type: 'claude-code', label: 'Claude Code', description: "Anthropic's CLI agent", icon: '🤖', color: '#a6adc8' },
+  { type: 'opencode', label: 'OpenCode', description: 'Open source coding agent', icon: '🔓', color: '#a6adc8' },
+  { type: 'droid', label: 'Droid', description: 'Custom AI agent', icon: '🤖', color: '#a6adc8' },
 ];
 
 const emojis = ['💼', '🚀', '💻', '🔧', '⚡', '🎯', '📦', '🛠️', '📊', '🎨'];
@@ -240,7 +243,6 @@ useEffect(() => {
 
     if (isEditMode && editingWorkspace) {
       // Edit mode: recreate workspace with new layout
-      const generateId = () => Math.random().toString(36).substring(2, 9);
       const getShell = () => editingWorkspace.terminals[0]?.shell || 'powershell.exe';
       
       const newTerminals = [];

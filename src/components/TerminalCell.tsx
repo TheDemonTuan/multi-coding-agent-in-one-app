@@ -10,48 +10,52 @@ import { TerminalContextMenu } from './TerminalContextMenu';
 import { ScrollToBottomButton } from './ScrollToBottomButton';
 import { TerminalSearch } from './TerminalSearch';
 
-// Theme constants
+// Theme constants - VS Code / xterm.js recommended dark terminal colors
 const DARK_THEME = {
-  background: '#0c0c0c',
+  background: '#1e1e1e',
   foreground: '#cccccc',
-  cursor: '#cccccc',
-  black: '#0c0c0c',
-  red: '#c50f1f',
-  green: '#13a10e',
-  yellow: '#c19c00',
-  blue: '#0037da',
-  magenta: '#881798',
-  cyan: '#3a96dd',
-  white: '#cccccc',
-  brightBlack: '#767676',
-  brightRed: '#ea5848',
-  brightGreen: '#16c60c',
-  brightYellow: '#f9f1a5',
-  brightBlue: '#3b78ff',
-  brightMagenta: '#b4009e',
-  brightCyan: '#61d6d6',
-  brightWhite: '#f2f2f2',
+  cursor: '#ffffff',
+  cursorAccent: '#000000',
+  selectionBackground: '#264f78',
+  black: '#000000',
+  red: '#cd3131',
+  green: '#0dbc79',
+  yellow: '#e5e510',
+  blue: '#2472c8',
+  magenta: '#bc3fbc',
+  cyan: '#11a8cd',
+  white: '#e5e5e5',
+  brightBlack: '#666666',
+  brightRed: '#f14c4c',
+  brightGreen: '#23d18b',
+  brightYellow: '#f5f543',
+  brightBlue: '#3b8eea',
+  brightMagenta: '#d670d6',
+  brightCyan: '#29b8db',
+  brightWhite: '#ffffff',
 };
 
 const LIGHT_THEME = {
   background: '#ffffff',
-  foreground: '#000000',
+  foreground: '#383a42',
   cursor: '#000000',
+  cursorAccent: '#ffffff',
+  selectionBackground: '#add6ff',
   black: '#000000',
-  red: '#800000',
-  green: '#008000',
-  yellow: '#808000',
-  blue: '#000080',
-  magenta: '#800080',
-  cyan: '#008080',
-  white: '#c0c0c0',
-  brightBlack: '#808080',
-  brightRed: '#ea5848',
-  brightGreen: '#00ff00',
-  brightYellow: '#ffff00',
-  brightBlue: '#0000ff',
-  brightMagenta: '#ff00ff',
-  brightCyan: '#00ffff',
+  red: '#cd3131',
+  green: '#0dbc79',
+  yellow: '#e5e510',
+  blue: '#2472c8',
+  magenta: '#bc3fbc',
+  cyan: '#11a8cd',
+  white: '#e5e5e5',
+  brightBlack: '#666666',
+  brightRed: '#f14c4c',
+  brightGreen: '#23d18b',
+  brightYellow: '#f5f543',
+  brightBlue: '#3b8eea',
+  brightMagenta: '#d670d6',
+  brightCyan: '#29b8db',
   brightWhite: '#ffffff',
 };
 
@@ -68,6 +72,7 @@ interface TerminalCellProps {
   onActivate: () => void;
   onSplit?: (direction: 'horizontal' | 'vertical') => void;
   onClear?: () => void;
+  onClose?: () => void;
 }
 
 const agentIcons = AGENT_ICONS;
@@ -78,6 +83,7 @@ export const TerminalCell: React.FC<TerminalCellProps> = ({
   onActivate,
   onSplit,
   onClear,
+  onClose,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const terminalRef = useRef<Terminal | null>(null);
@@ -85,6 +91,8 @@ export const TerminalCell: React.FC<TerminalCellProps> = ({
   const searchAddonRef = useRef<SearchAddon | null>(null);
   const resizeObserverRef = useRef<ResizeObserver | null>(null);
   const hasInitializedRef = useRef(false);
+
+  const { restartTerminal } = useWorkspaceStore();
 
   const listenersRef = useRef<{
     unsubscribeData?: () => void;
@@ -105,7 +113,7 @@ export const TerminalCell: React.FC<TerminalCellProps> = ({
   const [currentMatchIndex, setCurrentMatchIndex] = useState(0);
 
   const [isDragOver, setIsDragOver] = useState(false);
-  const [isHovered, setIsHovered] = useState(false);
+  const terminalsCount = currentWorkspace?.terminals.length || 0;
 
   const [contextMenu, setContextMenu] = useState<{
     visible: boolean;
@@ -131,7 +139,6 @@ export const TerminalCell: React.FC<TerminalCellProps> = ({
     switch (actionId) {
       case 'copy':
         if (terminalRef.current) {
-          terminalRef.current.selectAll();
           const selectedText = terminalRef.current.getSelection();
           if (selectedText) {
             navigator.clipboard.writeText(selectedText);
@@ -155,14 +162,27 @@ export const TerminalCell: React.FC<TerminalCellProps> = ({
       case 'split-vertical':
         onSplit?.('vertical');
         break;
+      case 'toggle-layout':
+        // Toggle between vertical and horizontal layout
+        if (currentWorkspace) {
+          useWorkspaceStore.getState().updateWorkspace(currentWorkspace.id, {
+            columns: currentWorkspace.rows,
+            rows: currentWorkspace.columns,
+          });
+        }
+        break;
       case 'clear':
         terminalRef.current?.clear();
         break;
-      case 'reset':
-        console.log('Reset terminal requested');
+      case 'restart':
+        terminalRef.current?.clear();
+        restartTerminal(terminal.id);
+        break;
+      case 'remove-terminal':
+        onClose?.();
         break;
     }
-  }, [onSplit, terminal.id]);
+  }, [onSplit, onClose, terminal.id, restartTerminal, currentWorkspace]);
 
   const handleScrollToBottom = useCallback(() => {
     if (terminalRef.current) {
@@ -181,6 +201,9 @@ export const TerminalCell: React.FC<TerminalCellProps> = ({
       }
     }
   }, []);
+
+  const lastDimensionsRef = useRef<{ cols: number; rows: number } | null>(null);
+  const fitDebounceRef = useRef<NodeJS.Timeout | null>(null);
 
   // Keyboard shortcuts for search
   useEffect(() => {
@@ -271,7 +294,7 @@ export const TerminalCell: React.FC<TerminalCellProps> = ({
   // Initialize terminal - runs ONCE per terminal instance
   useEffect(() => {
     if (!containerRef.current) return;
-    if (hasInitializedRef.current) return; // Prevent re-initialization
+    if (hasInitializedRef.current) return;
 
     if (!(window as any).electronAPI) {
       updateTerminalStatus(terminal.id, 'error');
@@ -301,6 +324,32 @@ export const TerminalCell: React.FC<TerminalCellProps> = ({
     term.open(containerRef.current);
     fitAddon.fit();
 
+    term.attachCustomKeyEventHandler((e: KeyboardEvent) => {
+      if (e.type !== 'keydown') return true;
+
+      // Ctrl+C or Ctrl+Shift+C: copy selected text instead of sending SIGINT
+      if ((e.ctrlKey || e.metaKey) && e.key === 'c') {
+        const selection = term.getSelection();
+        if (selection) {
+          e.preventDefault();
+          navigator.clipboard.writeText(selection);
+          term.clearSelection();
+          return false;
+        }
+      }
+
+      // Ctrl+V or Ctrl+Shift+V: paste from clipboard
+      if ((e.ctrlKey || e.metaKey) && e.key === 'v') {
+        e.preventDefault();
+        navigator.clipboard.readText().then((text) => {
+          (window as any).electronAPI?.terminalWrite(terminal.id, text);
+        });
+        return false;
+      }
+
+      return true;
+    });
+
     terminalRef.current = term;
     fitAddonRef.current = fitAddon;
     searchAddonRef.current = searchAddon;
@@ -308,17 +357,32 @@ export const TerminalCell: React.FC<TerminalCellProps> = ({
 
     term.options.theme = theme === 'dark' ? DARK_THEME : LIGHT_THEME;
 
+    // Store initial dimensions so ResizeObserver won't fire a resize on first observation
+    lastDimensionsRef.current = { cols: term.cols, rows: term.rows };
+
     resizeObserverRef.current = new ResizeObserver(() => {
-      if (fitAddonRef.current && terminalRef.current) {
-        fitAddonRef.current!.fit();
-        (window as any).electronAPI.terminalResize(terminal.id, terminalRef.current.cols, terminalRef.current.rows);
+      if (fitDebounceRef.current) {
+        clearTimeout(fitDebounceRef.current);
       }
+
+      fitDebounceRef.current = setTimeout(() => {
+        if (fitAddonRef.current && terminalRef.current) {
+          fitAddonRef.current.fit();
+          const { cols, rows } = terminalRef.current;
+
+          if (!lastDimensionsRef.current ||
+              lastDimensionsRef.current.cols !== cols ||
+              lastDimensionsRef.current.rows !== rows) {
+            lastDimensionsRef.current = { cols, rows };
+            (window as any).electronAPI.terminalResize(terminal.id, cols, rows);
+          }
+        }
+      }, 100);
     });
     resizeObserverRef.current.observe(containerRef.current);
 
     term.onScroll(handleScroll);
 
-    // Show agent startup message
     if (terminal.agent?.enabled && terminal.agent.type !== 'none') {
       const agentIcon = agentIcons[terminal.agent.type] || '🔧';
       term.write(`\x1b[36m${agentIcon} Starting ${terminal.agent.type}...\x1b[0m\r\n`);
@@ -344,9 +408,14 @@ export const TerminalCell: React.FC<TerminalCellProps> = ({
       }
     });
 
-    listenersRef.current.unsubscribeExit = (window as any).electronAPI.onTerminalExit(({ id, code }: { id: string; code: number }) => {
+    listenersRef.current.unsubscribeExit = (window as any).electronAPI.onTerminalExit(({ id, code, signal }: { id: string; code: number | null; signal?: string }) => {
       if (id === terminal.id) {
-        terminalRef.current?.write(`\r\n\x1b[33mTerminal exited with code ${code}\x1b[0m\r\n`);
+        const exitMessage = code !== null && code !== undefined
+          ? `Terminal exited with code ${code}`
+          : signal
+            ? `Terminal exited (signal: ${signal})`
+            : 'Terminal exited';
+        terminalRef.current?.write(`\r\n\x1b[33m${exitMessage}\x1b[0m\r\n`);
         updateTerminalStatus(terminal.id, 'stopped');
       }
     });
@@ -381,9 +450,19 @@ export const TerminalCell: React.FC<TerminalCellProps> = ({
         term.write(`\r\n\x1b[31mFailed to start terminal: ${err}\x1b[0m\r\n`);
       });
 
-    // Cleanup - only on actual unmount (component removed from DOM entirely)
     return () => {
       console.log(`[TerminalCell ${terminal.id}] Cleaning up terminal`);
+
+      // Kill PTY process in main process before disposing UI
+      if (typeof window !== 'undefined' && (window as any).electronAPI) {
+        (window as any).electronAPI.terminalKill(terminal.id).catch((err: any) => {
+          console.warn(`[TerminalCell ${terminal.id}] Failed to kill terminal process:`, err);
+        });
+      }
+
+      if (fitDebounceRef.current) {
+        clearTimeout(fitDebounceRef.current);
+      }
 
       if (resizeObserverRef.current) {
         resizeObserverRef.current.disconnect();
@@ -409,7 +488,7 @@ export const TerminalCell: React.FC<TerminalCellProps> = ({
         containerRef.current.innerHTML = '';
       }
     };
-  }, []); // Empty deps - only run once per terminal lifetime
+  }, []);
 
   // Update theme when changed
   useEffect(() => {
@@ -418,50 +497,46 @@ export const TerminalCell: React.FC<TerminalCellProps> = ({
     }
   }, [theme]);
 
-  // Handle visibility change - fit and focus when becoming active
+  // When becoming active: only focus the terminal, do NOT call fit().
+  // Border width is now constant (2px) so container size doesn't change on focus switch.
   useEffect(() => {
     if (isActive && terminalRef.current) {
-      setTimeout(() => {
-        if (fitAddonRef.current && terminalRef.current) {
-          fitAddonRef.current!.fit();
-          (window as any).electronAPI.terminalResize(
-            terminal.id,
-            terminalRef.current.cols,
-            terminalRef.current.rows
-          );
-          terminalRef.current.scrollToBottom();
-          terminalRef.current.focus();
-        }
-      }, 100);
+      terminalRef.current.scrollToBottom();
+      terminalRef.current.focus();
     }
   }, [isActive, terminal.id]);
 
-  // Re-fit terminal when workspace becomes visible (using currentWorkspace.id change)
+  // Re-fit terminal only when switching workspaces (not when switching terminals within same workspace)
+  const lastWorkspaceIdRef = useRef<string | null>(currentWorkspace?.id ?? null);
   useEffect(() => {
-    if (terminalRef.current && fitAddonRef.current) {
-      // Small delay to ensure DOM is ready
-      setTimeout(() => {
-        fitAddonRef.current!.fit();
-        (window as any).electronAPI.terminalResize(
-          terminal.id,
-          terminalRef.current!.cols,
-          terminalRef.current!.rows
-        );
-      }, 50);
+    const newId = currentWorkspace?.id ?? null;
+    if (newId !== lastWorkspaceIdRef.current) {
+      lastWorkspaceIdRef.current = newId;
+      if (terminalRef.current && fitAddonRef.current) {
+        setTimeout(() => {
+          fitAddonRef.current?.fit();
+        }, 50);
+      }
     }
-  }, [currentWorkspace?.id, terminal.id]);
+  }, [currentWorkspace?.id]);
 
   const agentIcon = terminal.agent?.enabled && terminal.agent.type !== 'none'
     ? agentIcons[terminal.agent.type]
     : '';
 
   const handleContainerKeyDown = useCallback((e: React.KeyboardEvent) => {
-    if (e.key === 'Tab' && isHovered && !isActive) {
+    if (e.key === 'Tab' && !isActive) {
       e.preventDefault();
       e.stopPropagation();
       onActivate();
     }
-  }, [isHovered, isActive, onActivate]);
+  }, [isActive, onActivate]);
+
+  const handleCloseClick = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    onClose?.();
+  }, [onClose]);
 
   return (
     <div
@@ -473,23 +548,21 @@ export const TerminalCell: React.FC<TerminalCellProps> = ({
       onDrop={handleDrop}
       onKeyDown={handleContainerKeyDown}
       tabIndex={-1}
-      onMouseEnter={() => {
-        setIsHovered(true);
-      }}
-      onMouseLeave={() => {
-        setIsHovered(false);
-      }}
       style={{
         display: 'flex',
         flexDirection: 'column',
-        border: isActive ? '1px solid #89b4fa' : isHovered ? '1px solid #89b4fa80' : '1px solid #45475a60',
+        border: isActive ? '2px solid #89b4fa' : '2px solid #45475a60',
         borderRadius: '4px',
         overflow: 'hidden',
         backgroundColor: theme === 'dark' ? '#1e1e2e' : '#ffffff',
         position: 'relative',
-        transition: 'border-color 0.15s ease',
         outline: 'none',
         height: '100%',
+        boxSizing: 'border-box',
+        boxShadow: isActive
+          ? '0 0 0 2px rgba(137, 180, 250, 0.3), 0 4px 12px rgba(137, 180, 250, 0.2)'
+          : 'none',
+        transition: 'border-color 0.15s ease, box-shadow 0.15s ease',
       }}
     >
       <div
@@ -504,7 +577,7 @@ export const TerminalCell: React.FC<TerminalCellProps> = ({
           cursor: 'pointer',
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1 }}>
           {agentIcon && <span style={{ fontSize: '14px' }}>{agentIcon}</span>}
           <span style={{ fontSize: '12px', fontWeight: 600 }}>
             {terminal.title}
@@ -513,47 +586,79 @@ export const TerminalCell: React.FC<TerminalCellProps> = ({
             <span style={{
               fontSize: '10px',
               padding: '2px 6px',
-              backgroundColor: '#89b4fa20',
-              color: '#89b4fa',
+              backgroundColor: '#45475a40',
+              color: '#a6adc8',
               borderRadius: '4px',
               fontWeight: 600,
             }}>
               {terminal.agent.type.toUpperCase()}
             </span>
           )}
-          {isHovered && !isActive && (
-            <span style={{
-              fontSize: '9px',
-              padding: '2px 4px',
-              backgroundColor: '#89b4fa40',
-              color: '#89b4fa',
-              borderRadius: '3px',
-              fontWeight: 600,
-              marginLeft: '4px',
-            }}>
+          {!isActive && (
+            <span
+              className="tab-to-focus-hint"
+              style={{
+                fontSize: '9px',
+                padding: '2px 4px',
+                backgroundColor: '#89b4fa40',
+                color: '#89b4fa',
+                borderRadius: '3px',
+                fontWeight: 600,
+                marginLeft: '4px',
+                opacity: 0,
+                transition: 'opacity 0.15s ease',
+              }}
+            >
               Tab to focus
             </span>
           )}
         </div>
-        <div className="terminal-status">
-          <span
-            style={{
-              display: 'inline-block',
-              width: '8px',
-              height: '8px',
-              borderRadius: '50%',
-              backgroundColor:
-                terminal.status === 'running'
-                  ? '#a6e3a1'
-                  : terminal.status === 'error'
-                  ? '#f38ba8'
-                  : '#6c7086',
-              marginRight: '4px',
-            }}
-          />
-          <span style={{ fontSize: '11px', color: '#6c7086' }}>
-            {terminal.status}
-          </span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <div className="terminal-status">
+            <span
+              style={{
+                display: 'inline-block',
+                width: '8px',
+                height: '8px',
+                borderRadius: '50%',
+                backgroundColor:
+                  terminal.status === 'running'
+                    ? '#a6e3a1'
+                    : terminal.status === 'error'
+                      ? '#f38ba8'
+                      : '#6c7086',
+                marginRight: '4px',
+              }}
+            />
+            <span style={{ fontSize: '11px', color: '#6c7086' }}>
+              {terminal.status}
+            </span>
+          </div>
+          {terminalsCount > 1 && (
+            <button
+              className="close-button"
+              onClick={handleCloseClick}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                width: '20px',
+                height: '20px',
+                padding: 0,
+                border: 'none',
+                borderRadius: '4px',
+                backgroundColor: 'transparent',
+                color: '#a6adc8',
+                cursor: 'pointer',
+                fontSize: '14px',
+                transition: 'all 0.15s ease',
+                opacity: 0,
+              }}
+              title="Remove terminal"
+            >
+              ×
+            </button>
+          )}
         </div>
       </div>
 

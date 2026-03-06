@@ -9,11 +9,9 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
-    "build:electron": "tsc -p tsconfig.node.json && vite build",
     "preview": "vite preview",
-    "electron:dev": "vite",
     "electron:start": "cross-env ELECTRON_IS_DEV=0 electron .",
-    "electron:build": "bun run build && bun run build:electron && bun run package",
+    "electron:build": "bun run build && bun run package",
     "electron:only": "electron .",
     "package": "node scripts/package.js",
     "postinstall": "electron-builder install-app-deps"
@@ -30,7 +28,7 @@
     "react-dom": "^19.2.4",
     "react-resizable-panels": "^4.7.1",
     "zustand": "^4.5.0"
-  },
+  }, 
   "devDependencies": {
     "@types/node": "^22.13.0",
     "@types/react": "^19.0.10",
@@ -56,11 +54,17 @@
       "dist/**/*",
       "dist-electron/**/*",
       "public/**/*",
-      "node_modules/**/*"
+      "package.json"
+    ],
+    "asar": true,
+    "asarUnpack": [
+      "node_modules/node-pty/**/*",
+      "node_modules/@xterm/**/*"
     ],
     "win": {
       "target": ["dir"]
     },
-    "npmRebuild": false
+    "npmRebuild": false,
+    "nodeGypRebuild": false
   }
 }

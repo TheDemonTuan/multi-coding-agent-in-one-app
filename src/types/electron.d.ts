@@ -38,16 +38,17 @@ export interface ElectronAPI {
   getWorkspaces: () => Promise<any[]>;
   
   // Terminal management
-  spawnTerminal: (id: string, cwd: string) => Promise<{ success: boolean; pid?: number }>;
-  spawnTerminalWithAgent: (id: string, cwd: string, agentConfig: AgentConfig) => Promise<{ success: boolean; pid?: number }>;
+  spawnTerminal: (id: string, cwd: string, workspaceId?: string) => Promise<{ success: boolean; pid?: number }>;
+  spawnTerminalWithAgent: (id: string, cwd: string, agentConfig: AgentConfig, workspaceId?: string) => Promise<{ success: boolean; pid?: number }>;
   terminalWrite: (id: string, data: string) => Promise<{ success: boolean; error?: string }>;
   terminalKill: (id: string) => Promise<{ success: boolean; error?: string }>;
   terminalResize: (id: string, cols: number, rows: number) => Promise<{ success: boolean }>;
+  cleanupWorkspaceTerminals: (workspaceId: string) => Promise<{ success: boolean; cleaned?: number }>;
   
   // Terminal events
   onTerminalData: (callback: (data: { id: string; data: string }) => void) => () => void;
   onTerminalStarted: (callback: (data: { id: string }) => void) => () => void;
-  onTerminalExit: (callback: (data: { id: string; code: number | null }) => void) => () => void;
+  onTerminalExit: (callback: (data: { id: string; code: number | null; signal?: string }) => void) => () => void;
   onTerminalError: (callback: (data: { id: string; error: string }) => void) => () => void;
 }
 

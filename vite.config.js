@@ -19,9 +19,6 @@ function copyPreloadPlugin() {
     };
 }
 export default defineConfig({
-    define: {
-        'process.env': {},
-    },
     plugins: [
         react(),
         copyPreloadPlugin(),
@@ -63,6 +60,7 @@ export default defineConfig({
     },
     server: {
         port: 5173,
+        strictPort: false, // Tự động tìm port khác nếu 5173 bị chiếm
         open: false,
     },
     build: {

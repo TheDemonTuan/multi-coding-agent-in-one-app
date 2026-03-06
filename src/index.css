@@ -22,12 +22,24 @@ body {
   transition: all 0.2s ease;
 }
 
-.terminal-cell:hover {
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+.terminal-cell:hover:not(.active) {
+  border-color: #45475acc !important;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4) !important;
+}
+
+.terminal-cell:hover:not(.active) .close-button,
+.terminal-cell:hover:not(.active) .tab-to-focus-hint {
+  opacity: 1 !important;
 }
 
 .terminal-cell.active {
-  box-shadow: 0 0 0 2px rgba(137, 180, 250, 0.5);
+  box-shadow: 0 0 0 2px rgba(137, 180, 250, 0.3), 0 4px 16px rgba(137, 180, 250, 0.2) !important;
+}
+
+/* Close button hover effect */
+.close-button:hover {
+  background-color: #f38ba8 !important;
+  color: #ffffff !important;
 }
 
 /* Custom scrollbar */

@@ -150,13 +150,18 @@ function createWindow() {
   });
 
   // Load Vite dev server or built files
-  const isDev = process.env.ELECTRON_IS_DEV !== '0';
+  const isDev = !app.isPackaged;
+
+  // Use VITE_DEV_SERVER_URL if available (injected by vite-plugin-electron)
+  // Otherwise, fall back to localhost with port from env or default
+  const devServerUrl = process.env.VITE_DEV_SERVER_URL || `http://localhost:${process.env.VITE_DEV_SERVER_PORT || '5173'}`;
+
   console.log('[Main] Starting in', isDev ? 'DEV mode' : 'PROD mode');
   console.log('[Main] Preload path:', path.join(__dirname, '../preload/preload.cjs'));
 
   if (isDev) {
-    console.log('[Main] Loading from http://localhost:5173');
-    mainWindow.loadURL('http://localhost:5173');
+    console.log('[Main] Loading from', devServerUrl);
+    mainWindow.loadURL(devServerUrl);
   } else {
     console.log('[Main] Loading from file:', path.join(__dirname, '../../dist/index.html'));
     mainWindow.loadFile(path.join(__dirname, '../../dist/index.html'));
@@ -218,17 +223,56 @@ app.on('window-all-closed', () => {
 });
 
 // Clean up terminals before app quits
+// In dev mode, skip killing the dev terminal but still clean up user-created terminals
 app.on('before-quit', () => {
+  const isDev = !app.isPackaged;
   console.log('[Main] App quitting, cleaning up terminals...');
-  terminalProcesses.forEach((term) => {
-    try {
-      term.ptyProcess.kill();
-    } catch (err) {
-      // Process may have already exited, ignore errors
-    }
-  });
-  terminalProcesses.clear();
-  terminalWorkspaceMap.clear();
+
+  // Get the PID of the current process to identify dev terminal
+  const currentPid = process.pid;
+
+  if (isDev) {
+    // In dev mode, skip killing terminals that are running the dev server
+    // but still clean up other user-created terminals
+    console.log('[Main] Dev mode: Cleaning up user terminals, preserving dev process');
+    terminalProcesses.forEach((term, id) => {
+      try {
+        // Skip killing if this terminal's PID matches current process (dev terminal)
+        if (term.ptyProcess.pid === currentPid) {
+          console.log(`[Main] Skipping dev terminal ${id} (pid: ${currentPid})`);
+          return;
+        }
+        term.ptyProcess.kill();
+        console.log(`[Main] Killed user terminal ${id}`);
+      } catch (err) {
+        console.warn(`[Main] Failed to kill terminal ${id}:`, err);
+      }
+    });
+    terminalProcesses.clear();
+    terminalWorkspaceMap.clear();
+  } else {
+    // In production, kill all terminal processes
+    let killCount = 0;
+    terminalProcesses.forEach((term, id) => {
+      try {
+        term.ptyProcess.kill();
+        killCount++;
+        console.log(`[Main] Killed terminal ${id}`);
+      } catch (err) {
+        console.warn(`[Main] Failed to kill terminal ${id}:`, err);
+      }
+    });
+
+    console.log(`[Main] Cleaned up ${killCount} terminal(s)`);
+    terminalProcesses.clear();
+    terminalWorkspaceMap.clear();
+  }
+
+  // Force quit after cleanup completes
+  setTimeout(() => {
+    console.log('[Main] Cleanup complete, forcing app exit');
+    app.exit(0);
+  }, 500);
 });
 
 // IPC handlers for terminal management
@@ -245,9 +289,9 @@ ipcMain.handle('spawn-terminal', (event, { id, cwd, workspaceId }: { id: string;
     console.error('[Main] Error checking cwd:', err);
   }
 
-  // Use cmd.exe with /k to keep shell open (just opens cmd prompt)
-  const shell = process.platform === 'win32' ? 'cmd.exe' : 'bash';
-  const args = process.platform === 'win32' ? ['/k'] : [];
+  // Use PowerShell for proper ANSI color support on Windows
+  const shell = process.platform === 'win32' ? 'powershell.exe' : 'bash';
+  const args = process.platform === 'win32' ? ['-NoLogo', '-NoExit'] : [];
 
   console.log('[Main] Using shell:', shell, 'args:', args.join(' '), 'cwd:', actualCwd);
 
@@ -257,7 +301,11 @@ ipcMain.handle('spawn-terminal', (event, { id, cwd, workspaceId }: { id: string;
       cwd: actualCwd,
       cols: 80,
       rows: 24,
-      useConpty: false, // Disable ConPTY to avoid STATUS_INVALID_IMAGE_FORMAT error on Windows
+      env: {
+        ...process.env,
+        COLORTERM: 'truecolor',
+        TERM_PROGRAM: 'TDTSpace',
+      },
     });
 
     console.log('[Main] Spawned PTY process with PID:', ptyProcess.pid);
@@ -486,8 +534,8 @@ ipcMain.handle('show-open-dialog', (event, options: any) => {
 // Spawn terminal with agent CLI
 ipcMain.handle('spawn-terminal-with-agent', (event, { id, cwd, agentConfig, workspaceId }: { id: string; cwd: string; agentConfig: any; workspaceId?: string }) => {
 
-  // Use cmd.exe as the shell for better compatibility on Windows
-  const shell = process.platform === 'win32' ? 'cmd.exe' : 'bash';
+  // Use PowerShell for proper ANSI color support on Windows
+  const shell = process.platform === 'win32' ? 'powershell.exe' : 'bash';
 
   // Build agent command if specified
   let args: string[] = [];
@@ -502,16 +550,17 @@ ipcMain.handle('spawn-terminal-with-agent', (event, { id, cwd, agentConfig, work
     const agentCmd = agentConfig.command || agentCommands[agentConfig.type];
     if (agentCmd) {
       if (process.platform === 'win32') {
-        // Use /k to keep shell open after running agent
-        args = ['/k', `${agentCmd} ${agentConfig.args?.join(' ') || ''}`];
+        // Use -NoLogo -NoExit -Command to run agent in PowerShell
+        const fullCmd = `${agentCmd} ${agentConfig.args?.join(' ') || ''}`.trim();
+        args = ['-NoLogo', '-NoExit', '-Command', fullCmd];
       } else {
         args = ['-c', `${agentConfig.args?.join(' ') || ''}; exec $SHELL`];
       }
     } else {
-      args = process.platform === 'win32' ? ['/k'] : [];
+      args = process.platform === 'win32' ? ['-NoLogo', '-NoExit'] : [];
     }
   } else {
-    args = process.platform === 'win32' ? ['/k'] : [];
+    args = process.platform === 'win32' ? ['-NoLogo', '-NoExit'] : [];
   }
 
   console.log('[Main] Using shell:', shell, 'args:', args.join(' '));
@@ -522,7 +571,11 @@ ipcMain.handle('spawn-terminal-with-agent', (event, { id, cwd, agentConfig, work
       cwd: cwd || process.cwd(),
       cols: 80,
       rows: 24,
-      useConpty: false, // Disable ConPTY to avoid STATUS_INVALID_IMAGE_FORMAT error
+      env: {
+        ...process.env,
+        COLORTERM: 'truecolor',
+        TERM_PROGRAM: 'TDTSpace',
+      },
     });
 
     console.log('[Main] Spawned PTY process with PID:', ptyProcess.pid);

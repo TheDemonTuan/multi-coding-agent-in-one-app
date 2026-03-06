@@ -183,6 +183,18 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => {
 
     removeWorkspace: async (id) => {
       console.log('[WorkspaceStore] Removing workspace:', id);
+
+      // First, kill terminals in main process
+      if (typeof window !== 'undefined' && (window as any).electronAPI) {
+        try {
+          await (window as any).electronAPI.deleteWorkspace(id);
+          console.log('[WorkspaceStore] Workspace deleted in main process');
+        } catch (err) {
+          console.error('[WorkspaceStore] Failed to delete workspace in main process:', err);
+        }
+      }
+
+      // Then update local state
       set((state) => {
         const updatedWorkspaces = state.workspaces.filter((ws) => ws.id !== id);
         const newState = {
@@ -345,6 +357,148 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => {
       });
     },
 
+    removeTerminal: async (terminalId: string) => {
+      const state = get();
+      if (!state.currentWorkspace) return;
+
+      const terminals = state.currentWorkspace.terminals;
+      if (terminals.length <= 1) {
+        console.warn('[WorkspaceStore] Cannot remove last terminal');
+        return;
+      }
+
+      // Kill terminal process in main process
+      if (typeof window !== 'undefined' && (window as any).electronAPI) {
+        try {
+          await (window as any).electronAPI.terminalKill(terminalId);
+          console.log('[WorkspaceStore] Terminal process killed:', terminalId);
+        } catch (err) {
+          console.error('[WorkspaceStore] Failed to kill terminal:', err);
+        }
+      }
+
+      // Remove terminal from list
+      const updatedTerminals = terminals.filter(t => t.id !== terminalId);
+      
+      // Calculate new grid dimensions
+      const totalTerminals = updatedTerminals.length;
+      let newColumns = state.currentWorkspace.columns;
+      let newRows = state.currentWorkspace.rows;
+      
+      // Try to maintain aspect ratio, prefer wider layouts
+      const aspectRatio = newColumns / newRows;
+      newRows = Math.ceil(Math.sqrt(totalTerminals / aspectRatio));
+      newColumns = Math.ceil(totalTerminals / newRows);
+
+      // Update titles to match new positions
+      const retitledTerminals = updatedTerminals.map((term, index) => ({
+        ...term,
+        title: `Terminal ${index + 1}`,
+      }));
+
+      const updatedWorkspace = {
+        ...state.currentWorkspace,
+        terminals: retitledTerminals,
+        columns: newColumns,
+        rows: newRows,
+      };
+
+      const updatedWorkspaces = state.workspaces.map(ws =>
+        ws.id === state.currentWorkspace!.id ? updatedWorkspace : ws
+      );
+
+      // Switch to next available terminal
+      const terminalIndex = terminals.findIndex(t => t.id === terminalId);
+      const nextTerminal = retitledTerminals[Math.min(terminalIndex, retitledTerminals.length - 1)];
+
+      set({
+        currentWorkspace: updatedWorkspace,
+        workspaces: updatedWorkspaces,
+        activeTerminalId: nextTerminal?.id || null,
+      });
+
+      // Save to storage (debounced)
+      if (typeof window !== 'undefined' && (window as any).electronAPI) {
+        debounceSave(async () => {
+          try {
+            await (window as any).electronAPI.setStoreValue(WORKSPACES_STORAGE_KEY, updatedWorkspaces);
+            console.log('[WorkspaceStore] Terminal removed and saved (debounced)');
+          } catch (err) {
+            console.error('[WorkspaceStore] Failed to save after remove:', err);
+          }
+        }, 300);
+      }
+    },
+
+    splitTerminal: (terminalId: string, direction: 'horizontal' | 'vertical') => {
+      const state = get();
+      if (!state.currentWorkspace) return;
+
+      const terminals = state.currentWorkspace.terminals;
+      const terminalIndex = terminals.findIndex(t => t.id === terminalId);
+      
+      if (terminalIndex === -1) return;
+
+      // Create new terminal with same config
+      const sourceTerminal = terminals[terminalIndex];
+      const newTerminal: TerminalPane = {
+        id: generateId(),
+        title: `Terminal ${terminals.length + 1}`,
+        cwd: sourceTerminal.cwd,
+        shell: sourceTerminal.shell,
+        status: 'stopped',
+        agent: sourceTerminal.agent ? { ...sourceTerminal.agent } : { type: 'none', enabled: false },
+      };
+
+      // Insert new terminal after the source
+      const updatedTerminals = [
+        ...terminals.slice(0, terminalIndex + 1),
+        newTerminal,
+        ...terminals.slice(terminalIndex + 1),
+      ];
+
+      // Update grid dimensions
+      let newColumns = state.currentWorkspace.columns;
+      let newRows = state.currentWorkspace.rows;
+
+      if (direction === 'vertical') {
+        // Split vertically = add column
+        newColumns = Math.min(newColumns + 1, 4); // Max 4 columns
+      } else {
+        // Split horizontally = add row
+        newRows = Math.min(newRows + 1, 4); // Max 4 rows
+      }
+
+      const updatedWorkspace = {
+        ...state.currentWorkspace,
+        terminals: updatedTerminals,
+        columns: newColumns,
+        rows: newRows,
+      };
+
+      const updatedWorkspaces = state.workspaces.map(ws =>
+        ws.id === state.currentWorkspace!.id ? updatedWorkspace : ws
+      );
+
+      set({
+        currentWorkspace: updatedWorkspace,
+        workspaces: updatedWorkspaces,
+        activeTerminalId: newTerminal.id,
+      });
+
+      // Save to storage (debounced)
+      if (typeof window !== 'undefined' && (window as any).electronAPI) {
+        debounceSave(async () => {
+          try {
+            await (window as any).electronAPI.setStoreValue(WORKSPACES_STORAGE_KEY, updatedWorkspaces);
+            console.log('[WorkspaceStore] Terminal split and saved (debounced)');
+          } catch (err) {
+            console.error('[WorkspaceStore] Failed to save after split:', err);
+          }
+        }, 300);
+      }
+    },
+
     // Helper methods for keyboard navigation
     getNextWorkspace: () => {
       const state = get();
@@ -389,6 +543,62 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => {
       if (!state.currentWorkspace) return null;
       if (terminalIndex < 0 || terminalIndex >= state.currentWorkspace.terminals.length) return null;
       return state.currentWorkspace.terminals[terminalIndex];
+    },
+
+    restartTerminal: async (terminalId: string) => {
+      const state = get();
+      if (!state.currentWorkspace) return;
+
+      const terminal = state.currentWorkspace.terminals.find(t => t.id === terminalId);
+      if (!terminal) return;
+
+      console.log('[WorkspaceStore] Restarting terminal:', terminalId);
+
+      // Kill existing terminal process
+      if (typeof window !== 'undefined' && (window as any).electronAPI) {
+        try {
+          await (window as any).electronAPI.terminalKill(terminalId);
+          console.log('[WorkspaceStore] Killed terminal process for restart:', terminalId);
+        } catch (err) {
+          console.error('[WorkspaceStore] Failed to kill terminal for restart:', err);
+        }
+
+        // Update status to stopped
+        useWorkspaceStore.getState().updateTerminalStatus(terminalId, 'stopped');
+
+        // Small delay to ensure process is fully killed
+        await new Promise(resolve => setTimeout(resolve, 100));
+
+        // Spawn new terminal with same config (use agent spawn if agent is enabled)
+        try {
+          let result;
+          if (terminal.agent?.enabled && terminal.agent.type !== 'none') {
+            result = await (window as any).electronAPI.spawnTerminalWithAgent(
+              terminalId,
+              terminal.cwd,
+              terminal.agent,
+              state.currentWorkspace.id
+            );
+          } else {
+            result = await (window as any).electronAPI.spawnTerminal(
+              terminalId,
+              terminal.cwd,
+              state.currentWorkspace.id
+            );
+          }
+
+          if (result.success) {
+            console.log('[WorkspaceStore] Terminal restarted successfully:', terminalId);
+            useWorkspaceStore.getState().updateTerminalStatus(terminalId, 'running');
+            if (result.pid) {
+              useWorkspaceStore.getState().setTerminalProcessId(terminalId, result.pid);
+            }
+          }
+        } catch (err) {
+          console.error('[WorkspaceStore] Failed to restart terminal:', err);
+          useWorkspaceStore.getState().updateTerminalStatus(terminalId, 'error');
+        }
+      }
     },
   };
 });

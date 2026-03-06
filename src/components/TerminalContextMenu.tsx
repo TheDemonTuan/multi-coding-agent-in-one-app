@@ -24,9 +24,12 @@ const defaultActions: ContextMenuAction[] = [
   { type: 'separator' } as any,
   { id: 'split-horizontal', label: 'Split Horizontal', icon: '⬌' },
   { id: 'split-vertical', label: 'Split Vertical', icon: '⬍' },
+  { id: 'toggle-layout', label: 'Toggle Layout', icon: '⇄', shortcut: 'Swap Rows/Cols' },
   { type: 'separator' } as any,
   { id: 'clear', label: 'Clear Terminal', icon: '🗑️' },
-  { id: 'reset', label: 'Reset Terminal', icon: '🔄', danger: true },
+  { id: 'restart', label: 'Restart Terminal', icon: '🔄' },
+  { type: 'separator' } as any,
+  { id: 'remove-terminal', label: 'Remove Terminal', icon: '❌', danger: true },
 ];
 
 export const TerminalContextMenu: React.FC<TerminalContextMenuProps> = ({
@@ -37,6 +40,7 @@ export const TerminalContextMenu: React.FC<TerminalContextMenuProps> = ({
   actions = defaultActions,
 }) => {
   const menuRef = useRef<HTMLDivElement>(null);
+  const [hoveredIndex, setHoveredIndex] = React.useState<number | null>(null);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -98,10 +102,13 @@ export const TerminalContextMenu: React.FC<TerminalContextMenuProps> = ({
             key={action.id}
             onClick={() => handleActionClick(action.id)}
             disabled={action.disabled}
+            onMouseEnter={() => !action.disabled && setHoveredIndex(index)}
+            onMouseLeave={() => setHoveredIndex(null)}
             style={{
               ...styles.actionButton,
               ...(action.danger ? styles.dangerButton : {}),
               ...(action.disabled ? styles.disabledButton : {}),
+              ...(hoveredIndex === index && !action.disabled ? styles.hoverButton : {}),
             }}
           >
             {action.icon && <span style={styles.icon}>{action.icon}</span>}
@@ -165,5 +172,8 @@ const styles: Record<string, React.CSSProperties> = {
   disabledButton: {
     color: '#6c7086',
     cursor: 'not-allowed',
+  },
+  hoverButton: {
+    backgroundColor: '#45475a',
   },
 };
