@@ -1,5 +1,5 @@
 import React from 'react';
-import { useWorkspaceStore } from '../stores/workspaceStore';
+import { useWorkspaceStore } from '../../stores/workspaceStore';
 import './WorkspaceSwitcherModal.css';
 
 interface WorkspaceSwitcherModalProps {

@@ -1,0 +1,73 @@
+/**
+ * Platform detection utilities
+ */
+
+export type Platform = 'win32' | 'darwin' | 'linux';
+
+let cachedPlatform: Platform | null = null;
+
+/**
+ * Get current platform
+ * Falls back to checking from electron API if not available
+ */
+export function getPlatform(): Platform {
+  if (cachedPlatform) {
+    return cachedPlatform;
+  }
+
+  // Check if we're in Electron renderer
+  if (typeof window !== 'undefined' && (window as any).electronAPI) {
+    (window as any).electronAPI.getPlatform().then((platform: string) => {
+      cachedPlatform = platform as Platform;
+    }).catch(console.warn);
+  }
+
+  // Fallback to navigator.platform
+  if (typeof navigator !== 'undefined') {
+    const platform = navigator.platform.toLowerCase();
+    if (platform.includes('win')) {
+      cachedPlatform = 'win32';
+    } else if (platform.includes('mac')) {
+      cachedPlatform = 'darwin';
+    } else if (platform.includes('linux')) {
+      cachedPlatform = 'linux';
+    }
+  }
+
+  return cachedPlatform || 'win32';
+}
+
+/**
+ * Check if current platform is Windows
+ */
+export function isWindows(): boolean {
+  return getPlatform() === 'win32';
+}
+
+/**
+ * Check if current platform is macOS
+ */
+export function isMacOS(): boolean {
+  return getPlatform() === 'darwin';
+}
+
+/**
+ * Check if current platform is Linux
+ */
+export function isLinux(): boolean {
+  return getPlatform() === 'linux';
+}
+
+/**
+ * Get platform-specific shell
+ */
+export function getShell(): string {
+  return isWindows() ? 'powershell.exe' : 'bash';
+}
+
+/**
+ * Get platform-specific modifier key name
+ */
+export function getModifierKeyName(): string {
+  return isMacOS() ? 'Cmd' : 'Ctrl';
+}

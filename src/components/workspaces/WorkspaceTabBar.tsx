@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useEffect } from 'react';
-import { useWorkspaceStore } from '../stores/workspaceStore';
+import { useWorkspaceStore } from '../../stores/workspaceStore';
 import { LayoutSelector } from './LayoutSelector';
 import { WorkspaceCreationModal } from './WorkspaceCreationModal';
 import './WorkspaceTabBar.css';

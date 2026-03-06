@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { useTemplateStore } from '../stores/templateStore';
-import { Template, AgentAllocation } from '../types/workspace';
+import { useTemplateStore } from '../../stores/templateStore';
+import { Template, AgentAllocation } from '../../types/workspace';
 
 interface TemplateSelectorProps {
   selectedTemplate: Template | null;

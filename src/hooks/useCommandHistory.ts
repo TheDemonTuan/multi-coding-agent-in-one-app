@@ -1,5 +1,5 @@
-import { useState, useCallback, useEffect } from 'react';
-import { CommandBlockData } from '../components/CommandBlock';
+import { useState, useCallback, useEffect, MutableRefObject } from 'react';
+import { CommandBlockData } from '../components/agents/CommandBlock';
 
 const COMMAND_HISTORY_STORAGE_KEY = 'terminal-command-history';
 

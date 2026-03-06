@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Template, AgentAllocation } from '../types/workspace';
+import { Template, AgentAllocation } from '../../types/workspace';
 
 interface CustomTemplateModalProps {
   isOpen: boolean;

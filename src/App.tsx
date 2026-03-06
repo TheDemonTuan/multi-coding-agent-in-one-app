@@ -1,24 +1,26 @@
 import React, { useEffect, useState } from 'react';
-import { TitleBar } from './components/TitleBar';
-import { TerminalGrid } from './components/TerminalGrid';
-import { WorkspaceTabBar } from './components/WorkspaceTabBar';
-import { WorkspaceSwitcherModal } from './components/WorkspaceSwitcherModal';
-import { SettingsModal } from './components/SettingsModal';
-import { useWorkspaceStore } from './stores/workspaceStore';
+import { TitleBar, TerminalGrid, WorkspaceTabBar, WorkspaceSwitcherModal, SettingsModal } from './components';
+import { useWorkspaceStore } from './stores';
 import { getAppVersion } from './utils/version';
+import { useWorkspaceNavigation } from './hooks';
 
 function App() {
+  // Use workspace navigation hook
+  const {
+    nextWorkspace,
+    previousWorkspace,
+    switchToWorkspaceByIndex,
+    getCurrentWorkspaceIndex,
+  } = useWorkspaceNavigation();
+
   const theme = useWorkspaceStore((state) => state.theme);
   const workspace = useWorkspaceStore((state) => state.currentWorkspace);
   const loadWorkspaces = useWorkspaceStore((state) => state.loadWorkspaces);
   const setWorkspaceModalOpen = useWorkspaceStore((state) => state.setWorkspaceModalOpen);
   const setCurrentWorkspace = useWorkspaceStore((state) => state.setCurrentWorkspace);
   const setActiveTerminal = useWorkspaceStore((state) => state.setActiveTerminal);
-  const getNextWorkspace = useWorkspaceStore((state) => state.getNextWorkspace);
-  const getPreviousWorkspace = useWorkspaceStore((state) => state.getPreviousWorkspace);
   const getNextTerminal = useWorkspaceStore((state) => state.getNextTerminal);
   const getPreviousTerminal = useWorkspaceStore((state) => state.getPreviousTerminal);
-  const getWorkspaceByIndex = useWorkspaceStore((state) => state.getWorkspaceByIndex);
   const getTerminalByIndex = useWorkspaceStore((state) => state.getTerminalByIndex);
   const workspaces = useWorkspaceStore((state) => state.workspaces);
   const activeTerminalId = useWorkspaceStore((state) => state.activeTerminalId);
@@ -77,11 +79,8 @@ function App() {
         e.preventDefault();
 
         // Always cycle to next workspace when Ctrl+Tab is pressed
-        const nextWs = getNextWorkspace();
+        const nextWs = nextWorkspace();
         console.log('[App] Ctrl+Tab pressed, cycling to next workspace:', nextWs?.name);
-        if (nextWs) {
-          setCurrentWorkspace(nextWs);
-        }
 
         // Open modal to show preview
         setWorkspaceSwitcherOpen(true);
@@ -91,11 +90,8 @@ function App() {
       // Ctrl+Shift+Tab: Previous workspace
       if (e.ctrlKey && e.shiftKey && e.key === 'Tab') {
         e.preventDefault();
-        const prevWorkspace = getPreviousWorkspace();
+        const prevWorkspace = previousWorkspace();
         console.log('[App] Ctrl+Shift+Tab pressed, cycling to previous workspace:', prevWorkspace?.name);
-        if (prevWorkspace) {
-          setCurrentWorkspace(prevWorkspace);
-        }
         setWorkspaceSwitcherOpen(true);
         return;
       }
@@ -103,22 +99,16 @@ function App() {
       // Ctrl+PageUp: Previous workspace
       if (e.ctrlKey && e.key === 'PageUp') {
         e.preventDefault();
-        const prevWorkspace = getPreviousWorkspace();
+        const prevWorkspace = previousWorkspace();
         console.log('[App] Ctrl+PageUp pressed, switching to:', prevWorkspace?.name);
-        if (prevWorkspace) {
-          setCurrentWorkspace(prevWorkspace);
-        }
         return;
       }
 
       // Ctrl+PageDown: Next workspace
       if (e.ctrlKey && e.key === 'PageDown') {
         e.preventDefault();
-        const nextWorkspace = getNextWorkspace();
-        console.log('[App] Ctrl+PageDown pressed, switching to:', nextWorkspace?.name);
-        if (nextWorkspace) {
-          setCurrentWorkspace(nextWorkspace);
-        }
+        const nextWorkspaceResult = nextWorkspace();
+        console.log('[App] Ctrl+PageDown pressed, switching to:', nextWorkspaceResult?.name);
         return;
       }
 
@@ -157,10 +147,7 @@ function App() {
       if (e.altKey && e.key.match(/^[1-9]$/)) {
         e.preventDefault();
         const index = parseInt(e.key) - 1;
-        const ws = getWorkspaceByIndex(index);
-        if (ws) {
-          setCurrentWorkspace(ws);
-        }
+        switchToWorkspaceByIndex(index);
         return;
       }
     };
@@ -183,11 +170,11 @@ function App() {
     };
   }, [
     workspaceSwitcherOpen,
-    getNextWorkspace,
-    getPreviousWorkspace,
+    nextWorkspace,
+    previousWorkspace,
+    switchToWorkspaceByIndex,
     getNextTerminal,
     getPreviousTerminal,
-    getWorkspaceByIndex,
     getTerminalByIndex,
     setCurrentWorkspace,
     setActiveTerminal,

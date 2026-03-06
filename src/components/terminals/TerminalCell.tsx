@@ -4,10 +4,10 @@ import { FitAddon } from '@xterm/addon-fit';
 import { WebLinksAddon } from '@xterm/addon-web-links';
 import { SearchAddon } from '@xterm/addon-search';
 import '@xterm/xterm/css/xterm.css';
-import { TerminalPane, AgentType } from '../types/workspace';
-import { useWorkspaceStore } from '../stores/workspaceStore';
+import { TerminalPane, AgentType } from '../../types/workspace';
+import { useWorkspaceStore } from '../../stores/workspaceStore';
 import { TerminalContextMenu } from './TerminalContextMenu';
-import { ScrollToBottomButton } from './ScrollToBottomButton';
+import { ScrollToBottomButton } from '../ui/ScrollToBottomButton';
 import { TerminalSearch } from './TerminalSearch';
 
 // Theme constants - VS Code / xterm.js recommended dark terminal colors

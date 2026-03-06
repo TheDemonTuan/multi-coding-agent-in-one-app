@@ -1,8 +1,8 @@
 import React, { useState, useMemo } from 'react';
 import { Group, Panel, Separator } from 'react-resizable-panels';
-import { useWorkspaceStore } from '../stores/workspaceStore';
+import { useWorkspaceStore } from '../../stores/workspaceStore';
 import { TerminalCell } from './TerminalCell';
-import { WorkspaceLayout } from '../types/workspace';
+import { WorkspaceLayout } from '../../types/workspace';
 
 export const TerminalGrid = React.memo(() => {
   const { workspaces, currentWorkspace, activeTerminalId, setActiveTerminal, removeTerminal, splitTerminal } = useWorkspaceStore();

@@ -1,5 +1,5 @@
 import React from 'react';
-import { useWorkspaceStore } from '../stores/workspaceStore';
+import { useWorkspaceStore } from '../../stores/workspaceStore';
 import './LayoutSelector.css';
 
 interface LayoutSelectorProps {

@@ -1,38 +1,9 @@
-import React, { useEffect, useState } from 'react';
-import { useWorkspaceStore } from '../stores/workspaceStore';
+import React from 'react';
+import { useWorkspaceStore } from '../../stores/workspaceStore';
 import './TitleBar.css';
 
 export const TitleBar: React.FC = () => {
   const { theme, setTheme, currentWorkspace } = useWorkspaceStore();
-  const [vnPatchStatus, setVnPatchStatus] = useState<{ isPatched: boolean; enabled: boolean } | null>(null);
-
-  useEffect(() => {
-    // Check Vietnamese IME patch status
-    const checkStatus = async () => {
-      try {
-        const [patchStatus, vnSettings] = await Promise.all([
-          window.electronAPI?.checkVietnameseImePatchStatus(),
-          window.electronAPI?.getVietnameseImeSettings(),
-        ]);
-        
-        setVnPatchStatus({
-          isPatched: patchStatus?.isPatched || false,
-          enabled: vnSettings?.enabled || false,
-        });
-      } catch (err) {
-        console.error('[TitleBar] Failed to check VN patch status:', err);
-      }
-    };
-    
-    checkStatus();
-    
-    // Re-check when patch is applied (for auto-patch)
-    const unsubscribe = window.electronAPI?.onVietnameseImePatchApplied(() => {
-      setTimeout(() => checkStatus(), 1500);
-    });
-    
-    return () => unsubscribe?.();
-  }, []);
 
   const handleMinimize = () => window.electronAPI?.windowMinimize();
   const handleMaximize = () => window.electronAPI?.windowMaximize();
@@ -50,24 +21,6 @@ export const TitleBar: React.FC = () => {
             <span className="indicator-separator">/</span>
             <span className="workspace-icon">{currentWorkspace.icon || '📁'}</span>
             <span className="workspace-name">{currentWorkspace.name}</span>
-          </div>
-        )}
-        
-        {/* Vietnamese IME Patch Indicator */}
-        {vnPatchStatus?.enabled && (
-          <div 
-            className="vn-patch-indicator"
-            title={vnPatchStatus.isPatched ? '✅ Vietnamese IME Patched' : '⚠️ Vietnamese IME Enabled (Not Patched)'}
-          >
-            🇻🇳
-            <span style={{
-              width: '6px',
-              height: '6px',
-              borderRadius: '50%',
-              backgroundColor: vnPatchStatus.isPatched ? '#a6e3a1' : '#f9e2af',
-              display: 'inline-block',
-              marginLeft: '4px',
-            }} />
           </div>
         )}
       </div>

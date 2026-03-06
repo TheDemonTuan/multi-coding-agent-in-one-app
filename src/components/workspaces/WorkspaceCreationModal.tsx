@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { useWorkspaceStore } from '../stores/workspaceStore';
-import { useTemplateStore } from '../stores/templateStore';
-import { AgentConfig, AgentType, AgentAllocation, Template, WorkspaceLayout } from '../types/workspace';
-import { AgentAllocationSlider } from './AgentAllocationSlider';
-import { TemplateSelector } from './TemplateSelector';
+import { useWorkspaceStore } from '../../stores/workspaceStore';
+import { useTemplateStore } from '../../stores/templateStore';
+import { AgentConfig, AgentType, AgentAllocation, Template, WorkspaceLayout } from '../../types/workspace';
+import { AgentAllocationSlider } from '../agents/AgentAllocationSlider';
+import { TemplateSelector } from '../agents/TemplateSelector';
 
 // Import generateId from workspaceStore to avoid duplication
 const generateId = () => Math.random().toString(36).substring(2, 9);

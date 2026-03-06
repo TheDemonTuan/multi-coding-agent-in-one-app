@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { CommandBlockData } from '../components/CommandBlock';
+import { CommandBlockData } from '../components/agents/CommandBlock';
 
 const COMMAND_HISTORY_STORAGE_KEY = 'terminal-command-history';
 
