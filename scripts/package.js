@@ -72,14 +72,26 @@ try {
   console.log('  ✓ Creating app.asar bundle...');
   const asarPath = path.join(appTempDir, 'app.asar');
 
-  // Install asar globally if not exists
+  // Use bunx (bun's npx equivalent) to run asar from parent directory
   try {
-    execSync('npx --yes asar p . app.asar', {
-      cwd: appTempDir,
-      stdio: 'pipe'
+    console.log('    Packing app.asar using bunx...');
+    // Run asar from parent directory, specifying source and destination explicitly
+    execSync(`bunx --bun asar pack "${appTempDir}" "${asarPath}"`, {
+      stdio: 'pipe',
+      maxBuffer: 50 * 1024 * 1024,
+      encoding: 'utf-8'
     });
+    console.log('    ✓ ASAR pack completed successfully');
   } catch (e) {
-    console.log('    ⚠ ASAR creation failed, continuing without bundling...');
+    console.log('    ⚠ ASAR creation failed:');
+    console.log('    Error:', e.message);
+    if (e.stderr) {
+      console.log('    Stderr:', e.stderr.toString());
+    }
+    if (e.stdout) {
+      console.log('    Stdout:', e.stdout.toString());
+    }
+    console.log('    Continuing without bundling...');
   }
 
   // Copy asar file if created

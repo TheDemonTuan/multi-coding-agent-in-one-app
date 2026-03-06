@@ -1,5 +1,43 @@
 import { AgentConfig } from './workspace';
 
+export interface VietnameseImePatchResult {
+  success: boolean;
+  alreadyPatched?: boolean;
+  message?: string;
+  patchedPath?: string;
+  processesKilled?: number;
+  version?: string;
+}
+
+export interface VietnameseImeStatus {
+  isPatched: boolean;
+  claudePath: string | null;
+  claudeCodeInstalled: boolean;
+  hasBackup?: boolean;
+  installedVia?: 'bun' | 'npm' | 'pnpm' | 'binary' | 'unknown';
+  version?: string | null;
+}
+
+export interface VietnameseImeSettings {
+  enabled: boolean;
+  autoPatch: boolean;
+  lastPatchStatus?: 'success' | 'failed' | 'pending';
+  lastPatchPath?: string;
+}
+
+export interface PatchValidation {
+  isValid: boolean;
+  isPatched: boolean;
+  issues: string[];
+  suggestions: string[];
+}
+
+export interface PatchLog {
+  level: 'debug' | 'info' | 'warn' | 'error';
+  message: string;
+  timestamp: number;
+}
+
 export interface OpenDialogOptions {
   properties?: ('openFile' | 'openDirectory' | 'multiSelections' | 'showHiddenFiles' | 'createDirectory')[];
   title?: string;
@@ -50,6 +88,16 @@ export interface ElectronAPI {
   onTerminalStarted: (callback: (data: { id: string }) => void) => () => void;
   onTerminalExit: (callback: (data: { id: string; code: number | null; signal?: string }) => void) => () => void;
   onTerminalError: (callback: (data: { id: string; error: string }) => void) => () => void;
+  
+  // Vietnamese IME patch
+  applyVietnameseImePatch: () => Promise<VietnameseImePatchResult>;
+  checkVietnameseImePatchStatus: () => Promise<VietnameseImeStatus>;
+  getVietnameseImeSettings: () => Promise<VietnameseImeSettings>;
+  setVietnameseImeSettings: (settings: VietnameseImeSettings) => Promise<{ success: boolean; error?: string }>;
+  restartClaudeTerminals: (workspaceId: string, terminals: Array<{ id: string; cwd: string; agentConfig?: any }>) => Promise<{ success: boolean; restarted?: Array<{ id: string; success: boolean; error?: string }> }>;
+  restoreVietnameseImePatch: () => Promise<{ success: boolean; message?: string }>;
+  validateVietnameseImePatch: () => Promise<PatchValidation>;
+  onVietnameseImePatchApplied: (callback: (result: VietnameseImePatchResult) => void) => () => void;
 }
 
 declare global {

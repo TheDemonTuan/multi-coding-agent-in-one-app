@@ -43,6 +43,20 @@ contextBridge.exposeInMainWorld('electronAPI', {
   saveTerminalHistory: (terminalId, history) => ipcRenderer.invoke('save-terminal-history', { terminalId, history }),
   clearTerminalHistory: (terminalId) => ipcRenderer.invoke('clear-terminal-history', { terminalId }),
 
+  // Vietnamese IME patch
+  applyVietnameseImePatch: () => ipcRenderer.invoke('apply-vietnamese-ime-patch'),
+  checkVietnameseImePatchStatus: () => ipcRenderer.invoke('check-vietnamese-ime-patch-status'),
+  getVietnameseImeSettings: () => ipcRenderer.invoke('get-vietnamese-ime-settings'),
+  setVietnameseImeSettings: (settings) => ipcRenderer.invoke('set-vietnamese-ime-settings', settings),
+  restartClaudeTerminals: (workspaceId, terminals) => ipcRenderer.invoke('restart-claude-terminals', workspaceId, terminals),
+  restoreVietnameseImePatch: () => ipcRenderer.invoke('restore-vietnamese-ime-patch'),
+  validateVietnameseImePatch: () => ipcRenderer.invoke('validate-vietnamese-ime-patch'),
+  onVietnameseImePatchApplied: (callback) => {
+    const listener = (_event, result) => callback(result);
+    ipcRenderer.on('vietnamese-ime-patch-applied', listener);
+    return () => ipcRenderer.removeListener('vietnamese-ime-patch-applied', listener);
+  },
+
   // Terminal events
   onTerminalData: (callback) => {
     const listener = (_event, data) => callback(data);

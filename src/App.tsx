@@ -3,6 +3,7 @@ import { TitleBar } from './components/TitleBar';
 import { TerminalGrid } from './components/TerminalGrid';
 import { WorkspaceTabBar } from './components/WorkspaceTabBar';
 import { WorkspaceSwitcherModal } from './components/WorkspaceSwitcherModal';
+import { SettingsModal } from './components/SettingsModal';
 import { useWorkspaceStore } from './stores/workspaceStore';
 import { getAppVersion } from './utils/version';
 
@@ -24,6 +25,7 @@ function App() {
 
   // Workspace switcher modal state
   const [workspaceSwitcherOpen, setWorkspaceSwitcherOpen] = useState(false);
+  const [settingsModalOpen, setSettingsModalOpen] = useState(false);
   const [appVersion, setAppVersion] = useState<string>('');
 
   // Load app version
@@ -42,6 +44,13 @@ function App() {
     const handleKeyDown = (e: KeyboardEvent) => {
       // Don't trigger shortcuts when typing in input fields
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
+        return;
+      }
+
+      // Ctrl+, (comma): Open Settings
+      if (e.ctrlKey && e.key === ',') {
+        e.preventDefault();
+        setSettingsModalOpen(true);
         return;
       }
 
@@ -256,14 +265,32 @@ function App() {
           color: '#6c7086',
           display: 'flex',
           justifyContent: 'space-between',
+          alignItems: 'center',
         }}
       >
         <span>v{appVersion} - Multi-terminal Workspace</span>
-        <div style={{ display: 'flex', gap: '16px' }}>
+        <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
           <span>Ctrl+Tab: Switch Workspace</span>
           <span>Ctrl+PgUp/PgDn: Prev/Next Workspace</span>
           <span>Ctrl+T: Next Terminal</span>
-          <span>Alt+1-9: Workspace 1-9</span>
+          <button
+            onClick={() => setSettingsModalOpen(true)}
+            style={{
+              padding: '4px 12px',
+              fontSize: '12px',
+              fontWeight: 600,
+              backgroundColor: '#313244',
+              color: '#cdd6f4',
+              border: '1px solid #45475a',
+              borderRadius: '4px',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+            }}
+          >
+            ⚙️ Settings
+          </button>
         </div>
       </footer>
 
@@ -274,6 +301,11 @@ function App() {
           setWorkspaceSwitcherOpen(false);
         }}
         onSelectWorkspace={handleSelectWorkspace}
+      />
+
+      <SettingsModal
+        isOpen={settingsModalOpen}
+        onClose={() => setSettingsModalOpen(false)}
       />
     </div>
   );

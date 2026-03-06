@@ -91,6 +91,9 @@ export const TerminalCell: React.FC<TerminalCellProps> = ({
   const searchAddonRef = useRef<SearchAddon | null>(null);
   const resizeObserverRef = useRef<ResizeObserver | null>(null);
   const hasInitializedRef = useRef(false);
+  const hasInitiallyFitRef = useRef(false);
+  const dataBufferRef = useRef<string[]>([]);
+  const isInitialFitCompleteRef = useRef(false);
 
   const { restartTerminal } = useWorkspaceStore();
 
@@ -120,6 +123,30 @@ export const TerminalCell: React.FC<TerminalCellProps> = ({
     x: number;
     y: number;
   }>({ visible: false, x: 0, y: 0 });
+  
+  const [vnPatched, setVnPatched] = useState(false);
+
+  // Check Vietnamese IME patch status for Claude Code terminals
+  React.useEffect(() => {
+    if (terminal.agent?.type === 'claude-code') {
+      const checkPatch = async () => {
+        try {
+          const status = await window.electronAPI?.checkVietnameseImePatchStatus();
+          setVnPatched(status?.isPatched || false);
+        } catch (err) {
+          console.error('[TerminalCell] Failed to check VN patch:', err);
+        }
+      };
+      checkPatch();
+      
+      // Re-check when patch is applied (for auto-patch)
+      const unsubscribe = window.electronAPI?.onVietnameseImePatchApplied(() => {
+        setTimeout(() => checkPatch(), 1500); // Wait 1.5s for patch to complete
+      });
+      
+      return () => unsubscribe?.();
+    }
+  }, [terminal.agent?.type]);
 
   const handleContextMenu = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
@@ -322,7 +349,28 @@ export const TerminalCell: React.FC<TerminalCellProps> = ({
     term.loadAddon(webLinksAddon);
     term.loadAddon(searchAddon);
     term.open(containerRef.current);
-    fitAddon.fit();
+
+    // Delay initial fit to ensure container has proper dimensions
+    // This prevents garbled/corrupted text rendering on first load
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        // Check container has valid dimensions before fitting
+        const rect = containerRef.current?.getBoundingClientRect();
+        if (rect && rect.width > 0 && rect.height > 0) {
+          fitAddon.fit();
+          // Update PTY with initial size
+          const { cols, rows } = term;
+          lastDimensionsRef.current = { cols, rows };
+          (window as any).electronAPI?.terminalResize(terminal.id, cols, rows);
+
+          // Mark initial fit as complete and flush buffered data
+          isInitialFitCompleteRef.current = true;
+          dataBufferRef.current.forEach(data => term.write(data));
+          dataBufferRef.current = [];
+          hasInitiallyFitRef.current = true;
+        }
+      });
+    });
 
     term.attachCustomKeyEventHandler((e: KeyboardEvent) => {
       if (e.type !== 'keydown') return true;
@@ -361,6 +409,9 @@ export const TerminalCell: React.FC<TerminalCellProps> = ({
     lastDimensionsRef.current = { cols: term.cols, rows: term.rows };
 
     resizeObserverRef.current = new ResizeObserver(() => {
+      // Skip resize until initial fit is complete
+      if (!hasInitiallyFitRef.current) return;
+
       if (fitDebounceRef.current) {
         clearTimeout(fitDebounceRef.current);
       }
@@ -391,6 +442,11 @@ export const TerminalCell: React.FC<TerminalCellProps> = ({
     // Setup event listeners
     listenersRef.current.unsubscribeData = (window as any).electronAPI.onTerminalData(({ id, data }: { id: string; data: string }) => {
       if (id === terminal.id && terminalRef.current) {
+        // Buffer data until initial fit is complete to prevent garbled output
+        if (!isInitialFitCompleteRef.current) {
+          dataBufferRef.current.push(data);
+          return;
+        }
         terminalRef.current.write(data);
 
         const buffer = terminalRef.current.buffer.active;
@@ -487,6 +543,12 @@ export const TerminalCell: React.FC<TerminalCellProps> = ({
       if (containerRef.current) {
         containerRef.current.innerHTML = '';
       }
+
+      // Reset initialization flags
+      hasInitializedRef.current = false;
+      hasInitiallyFitRef.current = false;
+      isInitialFitCompleteRef.current = false;
+      dataBufferRef.current = [];
     };
   }, []);
 
@@ -582,6 +644,9 @@ export const TerminalCell: React.FC<TerminalCellProps> = ({
           <span style={{ fontSize: '12px', fontWeight: 600 }}>
             {terminal.title}
           </span>
+          {terminal.agent?.type === 'claude-code' && vnPatched && (
+            <span style={{fontSize:'10px', marginLeft:'4px'}} title="Vietnamese IME Patched">🇻🇳</span>
+          )}
           {terminal.agent?.enabled && terminal.agent.type !== 'none' && (
             <span style={{
               fontSize: '10px',

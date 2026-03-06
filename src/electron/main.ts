@@ -4,6 +4,7 @@ import { fileURLToPath } from 'url';
 import fs from 'fs';
 import Store from 'electron-store';
 import * as pty from 'node-pty';
+import { applyVietnameseImePatch, isVietnameseImePatched, findClaudePath, restoreFromBackup, validatePatch } from '../utils/vietnameseImePatch.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -532,7 +533,35 @@ ipcMain.handle('show-open-dialog', (event, options: any) => {
 });
 
 // Spawn terminal with agent CLI
-ipcMain.handle('spawn-terminal-with-agent', (event, { id, cwd, agentConfig, workspaceId }: { id: string; cwd: string; agentConfig: any; workspaceId?: string }) => {
+ipcMain.handle('spawn-terminal-with-agent', async (event, { id, cwd, agentConfig, workspaceId }: { id: string; cwd: string; agentConfig: any; workspaceId?: string }) => {
+
+  // Auto-patch Claude Code if enabled and not already patched
+  if (agentConfig?.type === 'claude-code' && agentConfig?.enabled !== false) {
+    const vnSettings = store.get('vietnamese-ime-settings', { enabled: false, autoPatch: true }) as any;
+    
+    if (vnSettings.enabled && vnSettings.autoPatch) {
+      const isPatched = isVietnameseImePatched();
+      
+      if (!isPatched) {
+        console.log('[Main] Auto-patching Claude Code before spawning terminal...');
+        try {
+          const result = await applyVietnameseImePatch();
+          if (result.success) {
+            console.log('[Main] Auto-patch successful!');
+            if (mainWindow) {
+              mainWindow.webContents.send('vietnamese-ime-patch-applied', result);
+            }
+          } else {
+            console.warn('[Main] Auto-patch failed:', result.message);
+          }
+        } catch (err: any) {
+          console.error('[Main] Auto-patch error:', err.message);
+        }
+      } else {
+        console.log('[Main] Claude Code already patched, skipping auto-patch');
+      }
+    }
+  }
 
   // Use PowerShell for proper ANSI color support on Windows
   const shell = process.platform === 'win32' ? 'powershell.exe' : 'bash';
@@ -712,6 +741,209 @@ ipcMain.handle('clear-terminal-history', (event, { terminalId }: { terminalId: s
     return { success: true };
   } catch (err: any) {
     console.error('[TerminalHistory] Failed to clear history:', err.message);
+    return { success: false, error: err.message };
+  }
+});
+
+// Vietnamese IME patch handlers
+ipcMain.handle('apply-vietnamese-ime-patch', async () => {
+  console.log('[VietnameseIME] Apply patch requested');
+  try {
+    const result = await applyVietnameseImePatch();
+    console.log('[VietnameseIME] Patch result:', result);
+    
+    // Update store with patch status
+    if (result.success) {
+      const currentSettings = store.get('vietnamese-ime-settings', {}) as any;
+      store.set('vietnamese-ime-settings', {
+        ...currentSettings,
+        enabled: true,
+        autoPatch: currentSettings.autoPatch ?? true,
+        lastPatchStatus: 'success' as const,
+        lastPatchPath: result.patchedPath,
+      });
+    } else {
+      const currentSettings = store.get('vietnamese-ime-settings', {}) as any;
+      store.set('vietnamese-ime-settings', {
+        ...currentSettings,
+        lastPatchStatus: 'failed' as const,
+      });
+    }
+    
+    return result;
+  } catch (err: any) {
+    console.error('[VietnameseIME] Failed to apply patch:', err.message);
+    return { success: false, message: err.message };
+  }
+});
+
+ipcMain.handle('check-vietnamese-ime-patch-status', () => {
+  console.log('[VietnameseIME] Check patch status requested');
+  const isPatched = isVietnameseImePatched();
+  const claudePath = findClaudePath();
+  
+  // Check for backup file
+  const hasBackup = claudePath && fs.existsSync(claudePath + '.vn-backup');
+  
+  // Detect installation type
+  let installedVia = 'unknown';
+  if (claudePath) {
+    if (claudePath.includes('.bun')) installedVia = 'bun';
+    else if (claudePath.includes('npm')) installedVia = 'npm';
+    else if (claudePath.includes('pnpm')) installedVia = 'pnpm';
+    else if (claudePath.endsWith('.exe') || claudePath.endsWith('.cmd')) installedVia = 'binary';
+  }
+  
+  // Extract version
+  let version: string | null = null;
+  if (claudePath && fs.existsSync(claudePath)) {
+    try {
+      const content = fs.readFileSync(claudePath, 'latin1');
+      const versionMatch = content.match(/["']version["']\s*:\s*["']([\d.]+)["']/);
+      if (versionMatch && versionMatch[1]) {
+        version = versionMatch[1];
+      }
+    } catch {}
+  }
+  
+  return {
+    isPatched,
+    claudePath,
+    claudeCodeInstalled: !!claudePath,
+    hasBackup,
+    installedVia,
+    version,
+  };
+});
+
+// Restore from backup handler
+ipcMain.handle('restore-vietnamese-ime-patch', async () => {
+  console.log('[VietnameseIME] Restore from backup requested');
+  try {
+    const result = restoreFromBackup();
+    console.log('[VietnameseIME] Restore result:', result);
+    
+    if (result.success) {
+      // Update settings
+      const currentSettings = store.get('vietnamese-ime-settings', {}) as any;
+      store.set('vietnamese-ime-settings', {
+        ...currentSettings,
+        lastPatchStatus: 'failed' as const, // Cleared patch
+      });
+    }
+    
+    return result;
+  } catch (err: any) {
+    console.error('[VietnameseIME] Restore failed:', err.message);
+    return { success: false, message: err.message };
+  }
+});
+
+// Validate patch handler
+ipcMain.handle('validate-vietnamese-ime-patch', () => {
+  console.log('[VietnameseIME] Validate patch requested');
+  try {
+    const result = validatePatch();
+    console.log('[VietnameseIME] Validation result:', result);
+    return result;
+  } catch (err: any) {
+    console.error('[VietnameseIME] Validation failed:', err.message);
+    return {
+      isValid: false,
+      isPatched: false,
+      issues: [err.message],
+      suggestions: ['Please try patching again'],
+    };
+  }
+});
+
+ipcMain.handle('get-vietnamese-ime-settings', () => {
+  try {
+    const settings = store.get('vietnamese-ime-settings', {
+      enabled: false,
+      autoPatch: true,
+    }) as any;
+    console.log('[VietnameseIME] Get settings:', settings);
+    return settings;
+  } catch (err: any) {
+    console.error('[VietnameseIME] Failed to get settings:', err.message);
+    return { enabled: false, autoPatch: true };
+  }
+});
+
+ipcMain.handle('set-vietnamese-ime-settings', (event, settings: { enabled: boolean; autoPatch: boolean }) => {
+  try {
+    console.log('[VietnameseIME] Set settings:', settings);
+    store.set('vietnamese-ime-settings', settings);
+    
+    // If enabling and autoPatch, check if already patched first
+    if (settings.enabled && settings.autoPatch) {
+      const isPatched = isVietnameseImePatched();
+      
+      if (isPatched) {
+        console.log('[VietnameseIME] Auto-patch skipped: Already patched');
+      } else {
+        // Only apply patch if not already patched
+        applyVietnameseImePatch().then(result => {
+          console.log('[VietnameseIME] Auto-patch result:', result);
+          if (mainWindow && result.success) {
+            mainWindow.webContents.send('vietnamese-ime-patch-applied', result);
+          }
+        }).catch(err => {
+          console.error('[VietnameseIME] Auto-patch failed:', err);
+        });
+      }
+    }
+    
+    return { success: true };
+  } catch (err: any) {
+    console.error('[VietnameseIME] Failed to set settings:', err.message);
+    return { success: false, error: err.message };
+  }
+});
+
+// Restart Claude Code terminals in current workspace
+ipcMain.handle('restart-claude-terminals', async (event, { workspaceId, terminals }: { workspaceId: string; terminals: Array<{ id: string; cwd: string; agentConfig?: any }> }) => {
+  console.log('[VietnameseIME] Restarting Claude terminals for workspace:', workspaceId);
+  
+  try {
+    // First, clean up existing terminals
+    await (ipcMain.handle as any)('cleanup-workspace-terminals', { workspaceId });
+    
+    // Wait a bit for cleanup
+    await new Promise(resolve => setTimeout(resolve, 300));
+    
+    // Restart each terminal
+    const restarted: Array<{ id: string; success: boolean; error?: string }> = [];
+    
+    for (const term of terminals) {
+      try {
+        const result = await (ipcMain.handle as any)('spawn-terminal-with-agent', {
+          id: term.id,
+          cwd: term.cwd,
+          agentConfig: term.agentConfig,
+          workspaceId,
+        });
+        
+        restarted.push({
+          id: term.id,
+          success: result?.success,
+          error: result?.error,
+        });
+      } catch (err: any) {
+        restarted.push({
+          id: term.id,
+          success: false,
+          error: err.message,
+        });
+      }
+    }
+    
+    console.log('[VietnameseIME] Restarted', restarted.filter(r => r.success).length, 'terminals');
+    
+    return { success: true, restarted };
+  } catch (err: any) {
+    console.error('[VietnameseIME] Failed to restart terminals:', err.message);
     return { success: false, error: err.message };
   }
 });
