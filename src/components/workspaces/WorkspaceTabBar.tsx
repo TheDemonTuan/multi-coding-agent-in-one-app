@@ -54,7 +54,10 @@ const RenameModal: React.FC<RenameModalProps> = ({
   return (
     <div className="modal-overlay" onClick={onCancel}>
       <div className="rename-modal" onClick={(e) => e.stopPropagation()}>
-        <h3 className="rename-modal-title">Rename Workspace</h3>
+        <div className="rename-modal-header">
+          <span className="rename-modal-icon">✏️</span>
+          <h3 className="rename-modal-title">Rename Workspace</h3>
+        </div>
         <form onSubmit={handleSubmit}>
           <input
             ref={inputRef}
@@ -63,6 +66,7 @@ const RenameModal: React.FC<RenameModalProps> = ({
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="Enter workspace name"
+            maxLength={50}
           />
           <div className="rename-modal-actions">
             <button type="button" className="btn-cancel" onClick={onCancel}>
@@ -89,7 +93,9 @@ const DeleteConfirmModal: React.FC<DeleteConfirmModalProps> = ({
   return (
     <div className="modal-overlay" onClick={onCancel}>
       <div className="delete-modal" onClick={(e) => e.stopPropagation()}>
-        <div className="delete-modal-icon">{icon}</div>
+        <div className="delete-modal-icon-wrapper">
+          <span className="delete-modal-icon">{icon}</span>
+        </div>
         <h3 className="delete-modal-title">{title}</h3>
         <p className="delete-modal-description">{description}</p>
         <div className="delete-modal-actions">
@@ -118,6 +124,8 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
     <div
       className="context-menu"
       style={{ top: y, left: x }}
+      role="menu"
+      aria-label="Workspace actions"
     >
       <div
         className="context-menu-item"
@@ -127,8 +135,9 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
           onEditLayout(workspaceId);
           onClose();
         }}
+        role="menuitem"
       >
-        <span className="context-menu-icon">⚙️</span>
+        <span className="context-menu-icon settings">⚙️</span>
         <span>Edit Layout</span>
       </div>
       <div
@@ -139,10 +148,12 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
           onRename(workspaceId);
           onClose();
         }}
+        role="menuitem"
       >
-        <span className="context-menu-icon">✏️</span>
+        <span className="context-menu-icon edit">✏️</span>
         <span>Rename</span>
       </div>
+      <div className="context-menu-divider" />
       <div
         className="context-menu-item danger"
         onClick={(e) => {
@@ -151,8 +162,9 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
           onDelete(workspaceId);
           onClose();
         }}
+        role="menuitem"
       >
-        <span className="context-menu-icon">🗑️</span>
+        <span className="context-menu-icon delete">🗑️</span>
         <span>Delete</span>
       </div>
     </div>
@@ -264,12 +276,20 @@ export const WorkspaceTabBar: React.FC = () => {
 
   const isDeleteAll = deleteModal?.workspaceId === 'ALL';
 
+  const getTerminalCount = useCallback((workspaceId: string) => {
+    const workspace = workspaces.find(ws => ws.id === workspaceId);
+    return workspace?.terminals?.length || 0;
+  }, [workspaces]);
+
+  const totalTerminals = workspaces.reduce((acc, ws) => acc + getTerminalCount(ws.id), 0);
+
   return (
     <>
       <div className="workspace-tab-bar">
-        <div className="tabs-container">
+        <div className="tabs-container" role="tablist" aria-label="Workspaces">
           {workspaces.map((workspace) => {
             const isActive = currentWorkspace?.id === workspace.id;
+            const terminalCount = getTerminalCount(workspace.id);
 
             return (
               <div
@@ -277,10 +297,16 @@ export const WorkspaceTabBar: React.FC = () => {
                 className={`workspace-tab ${isActive ? 'active' : ''}`}
                 onClick={() => handleWorkspaceClick(workspace.id)}
                 onContextMenu={(e) => handleContextMenu(e, workspace.id)}
-                title={workspace.name}
+                title={`${workspace.name} - ${terminalCount} terminal${terminalCount !== 1 ? 's' : ''}`}
+                role="tab"
+                aria-selected={isActive}
+                tabIndex={isActive ? 0 : -1}
               >
-                <span className="tab-icon">{workspace.icon || '📁'}</span>
+                <span className="tab-icon" aria-hidden="true">{workspace.icon || '📁'}</span>
                 <span className="tab-name">{workspace.name}</span>
+                <span className="terminal-badge" aria-label={`${terminalCount} terminal${terminalCount !== 1 ? 's' : ''}`}>
+                  {terminalCount}
+                </span>
                 <button
                   className="tab-close-btn"
                   onClick={(e) => {
@@ -288,6 +314,7 @@ export const WorkspaceTabBar: React.FC = () => {
                     requestDelete(workspace.id, workspace.name);
                   }}
                   title="Delete workspace"
+                  aria-label={`Delete ${workspace.name}`}
                 >
                   ×
                 </button>
@@ -297,15 +324,41 @@ export const WorkspaceTabBar: React.FC = () => {
         </div>
 
         <div className="tab-actions">
-          <LayoutSelector compact />
+          {totalTerminals > 0 && (
+            <div className="total-count-badge" title={`Total: ${totalTerminals} terminal${totalTerminals !== 1 ? 's' : ''}`}>
+              <span className="total-count-icon">📊</span>
+              <span className="total-count-number">{totalTerminals}</span>
+            </div>
+          )}
+          
+          <button
+            className="action-btn new-workspace-btn"
+            onClick={() => setWorkspaceModalOpen(true)}
+            title="New Workspace"
+            aria-label="Create new workspace"
+          >
+            <span className="btn-icon-plus">+</span>
+          </button>
+          
+          {currentWorkspace && (
+            <button
+              className="action-btn edit-layout-btn"
+              onClick={() => setWorkspaceModalOpenWithEdit(currentWorkspace)}
+              title="Edit Current Layout"
+              aria-label="Edit current workspace layout"
+            >
+              <span className="btn-icon-settings">⚙️</span>
+            </button>
+          )}
 
-          {workspaces.length > 0 && (
+          {workspaces.length > 1 && (
             <button
               className="action-btn delete-all-btn"
               onClick={handleDeleteAll}
               title="Delete All Workspaces"
+              aria-label="Delete all workspaces"
             >
-              <span>🗑️</span>
+              <span className="btn-icon-delete">🗑️</span>
             </button>
           )}
         </div>
@@ -344,7 +397,7 @@ export const WorkspaceTabBar: React.FC = () => {
               <>
                 Are you sure you want to delete <strong>all {workspaces.length} workspaces</strong>?
                 <br />
-                This action cannot be undone.
+                This will remove <strong>{totalTerminals} terminals</strong> and cannot be undone.
               </>
             ) : (
               <>
