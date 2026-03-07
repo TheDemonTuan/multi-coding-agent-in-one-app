@@ -21,6 +21,7 @@ export interface VietnameseImeStatus {
 export interface VietnameseImeSettings {
   enabled: boolean;
   autoPatch: boolean;
+  patchedVersion?: string;
   lastPatchStatus?: 'success' | 'failed' | 'pending';
   lastPatchPath?: string;
 }
