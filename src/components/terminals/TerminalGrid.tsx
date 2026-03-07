@@ -1,11 +1,20 @@
-import React from 'react';
+import React, { useRef, useMemo } from 'react';
 import { Group, Panel, Separator } from 'react-resizable-panels';
 import { useWorkspaceStore } from '../../stores/workspaceStore';
 import { TerminalCell } from './TerminalCell';
 import { WorkspaceLayout } from '../../types/workspace';
 
 export const TerminalGrid = React.memo(() => {
-  const { currentWorkspace, activeTerminalId, setActiveTerminal, removeTerminal, splitTerminal } = useWorkspaceStore();
+  const { workspaces, currentWorkspace, activeTerminalId, setActiveTerminal, removeTerminal, splitTerminal } = useWorkspaceStore();
+  
+  // Track which workspaces have been rendered (lazy rendering)
+  // Once a workspace is rendered, it stays mounted to preserve terminal state
+  const renderedWorkspaceIdsRef = useRef<Set<string>>(new Set());
+  
+  // Mark current workspace as rendered if not already
+  if (currentWorkspace && !renderedWorkspaceIdsRef.current.has(currentWorkspace.id)) {
+    renderedWorkspaceIdsRef.current.add(currentWorkspace.id);
+  }
 
   if (!currentWorkspace) {
     return <div>No workspace selected</div>;
@@ -14,7 +23,24 @@ export const TerminalGrid = React.memo(() => {
   return (
     <div style={styles.container}>
       <div style={styles.workspaceContainer}>
-        {renderWorkspace(currentWorkspace, activeTerminalId, setActiveTerminal, removeTerminal, splitTerminal)}
+        {/* Render only workspaces that have been visited (lazy rendering) */}
+        {/* Once rendered, workspace stays mounted to preserve terminal state */}
+        {workspaces
+          .filter((ws: WorkspaceLayout) => renderedWorkspaceIdsRef.current.has(ws.id))
+          .map((workspace: WorkspaceLayout) => {
+            const isActive = workspace.id === currentWorkspace.id;
+            return (
+              <div
+                key={workspace.id}
+                style={{
+                  ...styles.workspaceWrapper,
+                  display: isActive ? 'block' : 'none',
+                }}
+              >
+                {renderWorkspace(workspace, activeTerminalId, setActiveTerminal, removeTerminal, splitTerminal)}
+              </div>
+            );
+          })}
       </div>
     </div>
   );
@@ -138,6 +164,13 @@ const styles: Record<string, React.CSSProperties> = {
     overflow: 'hidden',
   },
   workspaceContainer: {
+    height: '100%',
+    width: '100%',
+    position: 'absolute',
+    top: 0,
+    left: 0,
+  },
+  workspaceWrapper: {
     height: '100%',
     width: '100%',
     position: 'absolute',

@@ -154,21 +154,14 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => {
     setCurrentWorkspace: (workspace) => {
       console.log('[WorkspaceStore] Setting workspace:', workspace.name);
       set((state) => {
-        const previousWorkspace = state.currentWorkspace;
         const newState = { currentWorkspace: workspace };
 
-        // Cleanup terminals from previous workspace before switching
-        // This prevents memory leaks by killing all PTY processes and cleaning up resources
-        if (previousWorkspace && typeof window !== 'undefined' && (window as any).electronAPI) {
-          console.log('[WorkspaceStore] Cleaning up terminals from previous workspace:', previousWorkspace.name);
-          (window as any).electronAPI.cleanupWorkspaceTerminals(previousWorkspace.id)
-            .then((result: any) => {
-              console.log('[WorkspaceStore] Cleaned up terminals from previous workspace:', result.cleaned);
-            })
-            .catch((err: any) => {
-              console.error('[WorkspaceStore] Failed to cleanup previous workspace terminals:', err);
-            });
-        }
+        // Note: We no longer cleanup terminals when switching workspaces
+        // Terminals continue running in background and are only killed when:
+        // - User explicitly closes a terminal
+        // - Workspace is deleted
+        // - App quits
+        // This allows users to switch between workspaces without interrupting running processes
 
         // Debounce save to prevent rapid writes during workspace switch
         if (typeof window !== 'undefined' && (window as any).electronAPI) {
