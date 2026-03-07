@@ -321,6 +321,15 @@ export const WorkspaceTabBar: React.FC = () => {
               </div>
             );
           })}
+          
+          <button
+            className="add-workspace-tab"
+            onClick={() => setWorkspaceModalOpen(true)}
+            title="New Workspace"
+            aria-label="Create new workspace"
+          >
+            <span className="add-workspace-icon">+</span>
+          </button>
         </div>
 
         <div className="tab-actions">
@@ -330,15 +339,6 @@ export const WorkspaceTabBar: React.FC = () => {
               <span className="total-count-number">{totalTerminals}</span>
             </div>
           )}
-          
-          <button
-            className="action-btn new-workspace-btn"
-            onClick={() => setWorkspaceModalOpen(true)}
-            title="New Workspace"
-            aria-label="Create new workspace"
-          >
-            <span className="btn-icon-plus">+</span>
-          </button>
           
           {currentWorkspace && (
             <button

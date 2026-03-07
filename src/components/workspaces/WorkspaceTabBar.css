@@ -47,6 +47,66 @@
 }
 
 /* ============================================
+   Add Workspace Tab Button
+   ============================================ */
+
+.add-workspace-tab {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  min-width: 36px;
+  background: rgba(137, 180, 250, 0.1);
+  border: 1px dashed rgba(137, 180, 250, 0.4);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  flex-shrink: 0;
+  margin-left: 6px;
+  position: relative;
+  overflow: hidden;
+}
+
+.add-workspace-tab::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, rgba(137, 180, 250, 0.15) 0%, rgba(180, 190, 254, 0.15) 100%);
+  opacity: 0;
+  transition: opacity 0.25s;
+}
+
+.add-workspace-tab:hover::before {
+  opacity: 1;
+}
+
+.add-workspace-tab:hover {
+  background: rgba(137, 180, 250, 0.2);
+  border-color: rgba(137, 180, 250, 0.6);
+  transform: scale(1.05);
+  box-shadow: 0 2px 8px rgba(137, 180, 250, 0.2);
+}
+
+.add-workspace-tab:active {
+  transform: scale(0.95);
+}
+
+.add-workspace-icon {
+  font-size: 20px;
+  font-weight: 300;
+  line-height: 1;
+  color: rgba(137, 180, 250, 1);
+  transition: transform 0.2s;
+  position: relative;
+  z-index: 1;
+}
+
+.add-workspace-tab:hover .add-workspace-icon {
+  transform: scale(1.15) rotate(90deg);
+}
+
+/* ============================================
    Workspace Tab - Premium Design
    ============================================ */
 
