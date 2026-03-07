@@ -1,0 +1,91 @@
+{
+  "featureId": "critical-ipc-event-listener-cleanup",
+  "reviewedAt": "2026-03-07T21:15:00.000Z",
+  "commitId": "499301e",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "Implementation adds comprehensive console logging for IPC event listener lifecycle in TerminalCell.tsx. The worker added subscription logging for all 4 IPC channels (onTerminalData, onTerminalStarted, onTerminalExit, onTerminalError) and detailed unsubscribe logging during cleanup. The implementation enables verification of IPC listener lifecycle through console output and ensures listenersRef.current is properly cleared after unmount.",
+    "issues": [],
+    "strengths": [
+      "All 4 IPC listeners properly tracked in listenersRef.current with unsubscribe functions",
+      "Each subscription logs when it's established for debugging",
+      "Cleanup function checks if each unsubscribe function exists before calling it (defensive coding)",
+      "Console logs show state before and after clearing listenersRef.current",
+      "Proper cleanup order: IPC listeners unsubscribed before PTY process kill",
+      "TypeScript compilation and build both succeed"
+    ]
+  },
+  "validationContractVerification": {
+    "assertionId": "VAL-MEM-003",
+    "title": "IPC Event Listener Cleanup",
+    "passCriteria": [
+      {
+        "criterion": "listenersRef.current is empty object after cleanup",
+        "status": "pass",
+        "evidence": "Code at TerminalCell.tsx:601 shows `listenersRef.current = {}` after all unsubscribe calls, with logging showing state before and after"
+      },
+      {
+        "criterion": "No duplicate event handlers registered after terminal recreation",
+        "status": "pass",
+        "evidence": "Each listener is subscribed once in useEffect with empty dependency array (runs once per terminal instance), and properly unsubscribed on cleanup"
+      },
+      {
+        "criterion": "Console shows no MaxListenersExceededWarning after 20 terminal spawns",
+        "status": "not_automated",
+        "evidence": "No automated test suite exists (test infrastructure not set up per transcript). Manual verification required - worker verified via TypeScript compilation and build only"
+      },
+      {
+        "criterion": "IPC listener count matches active terminal count",
+        "status": "not_automated",
+        "evidence": "No Chrome DevTools Memory panel verification performed. Implementation correct but lacks runtime verification"
+      }
+    ],
+    "failCriteria": [
+      {
+        "criterion": "IPC listeners accumulate across terminal lifecycles",
+        "status": "pass",
+        "evidence": "Cleanup function properly calls all 4 unsubscribe functions and clears listenersRef.current"
+      },
+      {
+        "criterion": "Event handlers fire for disposed terminals",
+        "status": "pass",
+        "evidence": "Listeners unsubscribed BEFORE terminal disposal, preventing callbacks to disposed instances"
+      },
+      {
+        "criterion": "Memory profiler shows listener closure references retained",
+        "status": "not_verified",
+        "evidence": "No heap snapshot comparison performed. Implementation appears correct but not verified with memory profiling tools"
+      }
+    ]
+  },
+  "implementationAnalysis": {
+    "whatWasImplemented": "The worker implemented detailed console logging for IPC event listener lifecycle management: (1) Added console.log when subscribing to each IPC channel, (2) Added console.log when unsubscribing each listener during cleanup, (3) Added logging showing listenersRef.current state before and after clearing, (4) Updated memory-optimization.md documentation with enhanced logging verification pattern.",
+    "codeQuality": "high",
+    "codeQualityRationale": "Code follows defensive programming patterns with null checks, maintains proper cleanup order, uses TypeScript correctly, and adds verifiable logging without affecting functionality. Build and typecheck both pass.",
+    "completenessAssessment": "The implementation is complete for adding verification logging. However, no automated tests were added to verify the MaxListenersExceededWarning criterion or measure actual listener counts. This is noted as a limitation in the handoff."
+  },
+  "sharedStateObservations": [
+    {
+      "area": "skills",
+      "observation": "The memory-leak-fixer skill procedure emphasizes 'Test-Driven Development (RED FIRST)' and requires automated tests to be written before implementation. However, the worker did not add any automated tests because test infrastructure doesn't exist (no test scripts in package.json). The skill should clarify what to do when test infrastructure is missing.",
+      "evidence": "Skill says 'Write failing tests BEFORE implementation' but handoff states 'No automated tests added - test infrastructure not yet set up in this project'. The worker proceeded without tests rather than setting up test infrastructure first.",
+      "recommendation": "Update memory-leak-fixer skill to include decision point: if test infrastructure missing, either (a) set up basic test infrastructure first as part of the feature, or (b) document manual verification steps required and create follow-up feature for automated tests"
+    },
+    {
+      "area": "services",
+      "observation": "The worker verified the implementation using 'bun tsc --noEmit' and 'bun run build', but these commands are not documented in .factory/services.yaml. Only typecheck script is listed but not the build command.",
+      "evidence": "services.yaml has 'typecheck: bun run typecheck' but worker ran 'bun tsc --noEmit' directly. Build command exists in package.json but not documented in services.",
+      "recommendation": "Add 'build' command to services.yaml for consistency"
+    },
+    {
+      "area": "knowledge",
+      "observation": "The implementation reveals that IPC listener cleanup verification currently relies entirely on console logging and manual Chrome DevTools inspection. There's no automated way to verify listener counts or detect MaxListenersExceededWarning programmatically.",
+      "evidence": "Transcript shows worker only verified via TypeScript compilation and build. No automated test for listener count. Documentation mentions manual Chrome DevTools verification but no programmatic approach.",
+      "recommendation": "Document in memory-optimization.md or AGENTS.md that IPC listener leak detection currently requires manual verification via Chrome DevTools Event Listeners panel and console monitoring for MaxListenersExceededWarning. Consider adding a future feature for automated listener count monitoring."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "The implementation successfully adds comprehensive logging for IPC event listener lifecycle management, enabling developers to verify that all 4 IPC listeners (onTerminalData, onTerminalStarted, onTerminalExit, onTerminalError) are properly subscribed and unsubscribed during terminal cleanup. The code quality is high with proper defensive programming and correct cleanup order. However, the verification is incomplete: no automated tests were added (test infrastructure missing), no Chrome DevTools Memory panel verification was performed, and no runtime verification of MaxListenersExceededWarning was conducted. The implementation passes code review but requires manual runtime verification to fully satisfy VAL-MEM-003 validation criteria. Key gap: memory-leak-fixer skill should clarify procedure when test infrastructure is missing."
+}

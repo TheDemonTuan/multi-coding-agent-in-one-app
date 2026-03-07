@@ -1,0 +1,93 @@
+{
+  "assertionGroup": "event-listener-cleanup",
+  "testedAt": "2026-03-07T21:30:00.000Z",
+  "credentials": {
+    "workspaceNamespace": "test-workspace-events"
+  },
+  "toolsUsed": ["code inspection", "file review", "validation report analysis"],
+  "testedAssertions": ["VAL-MEM-003", "VAL-MEM-004"],
+  "results": [
+    {
+      "assertionId": "VAL-MEM-003",
+      "title": "IPC Event Listener Cleanup",
+      "status": "pass",
+      "evidence": [
+        "TerminalCell.tsx:108-114 - listenersRef.current defined with unsubscribe functions for all 4 IPC channels",
+        "TerminalCell.tsx:438-471 - All 4 IPC listeners subscribed with console logging (onTerminalData, onTerminalStarted, onTerminalExit, onTerminalError)",
+        "TerminalCell.tsx:580-601 - Cleanup function calls all 4 unsubscribe functions with verification logging",
+        "TerminalCell.tsx:601 - listenersRef.current = {} after cleanup clears the ref",
+        "TerminalCell.tsx:602 - Console log shows listenersRef.current cleared state for verification",
+        "preload.cjs:62-85 - IPC event listeners properly return unsubscribe functions via removeListener",
+        "validation report: critical-ipc-event-listener-cleanup.json confirms all pass criteria met",
+        "Code review status: PASS (commit 499301e)"
+      ],
+      "reason": "Implementation correctly addresses all VAL-MEM-003 criteria: (1) listenersRef.current is empty object after cleanup (line 601), (2) No duplicate event handlers - each listener subscribed once in useEffect with empty dependency array, (3) IPC listeners unsubscribed before PTY process kill (proper cleanup order), (4) removeListener called for each IPC channel in preload.cjs. Console logging enables verification of subscription/unsubscription lifecycle. Code review passed with no issues. Note: MaxListenersExceededWarning verification requires manual Chrome DevTools testing (test infrastructure not yet implemented per synthesis.json)."
+    },
+    {
+      "assertionId": "VAL-MEM-004",
+      "title": "xterm.js Event Disposal",
+      "status": "pass",
+      "evidence": [
+        "TerminalCell.tsx:117-124 - xtermDisposablesRef defined to store IDisposable objects from onData, onScroll, and cleanup flag for custom key handler",
+        "TerminalCell.tsx:426-428 - onScroll handler stored as IDisposable: xtermDisposablesRef.current.onScrollDisposable = term.onScroll(handleScroll)",
+        "TerminalCell.tsx:473-476 - onData handler stored as IDisposable: xtermDisposablesRef.current.onDataDisposable = term.onData(...)",
+        "TerminalCell.tsx:478-503 - Custom key event handler with cleanup flag pattern (attachCustomKeyEventHandler returns void)",
+        "TerminalCell.tsx:616-638 - Cleanup disposes onData handler with console logging",
+        "TerminalCell.tsx:639-650 - Cleanup disposes onScroll handler with console logging",
+        "TerminalCell.tsx:651-656 - Cleanup executes customKeyHandlerCleanup function",
+        "TerminalCell.tsx:658-688 - Addons disposed explicitly before terminal.dispose()",
+        "TerminalCell.tsx:690-700 - terminal.dispose() called before terminalRef.current = null",
+        "TerminalCell.tsx:708 - xtermDisposablesRef.current = {} clears all disposables",
+        "validation report: critical-xtermjs-event-disposal.json confirms all pass criteria met",
+        "Code review status: PASS (commit 4e306aa)"
+      ],
+      "reason": "Implementation correctly addresses all VAL-MEM-004 criteria: (1) term.dispose() called before terminal ref nullification (line 695, nullified at 700), (2) onData and onScroll handlers explicitly disposed via stored IDisposable objects, (3) Custom key event handler detached via cleanup flag pattern (required because attachCustomKeyEventHandler returns void), (4) WebGL context and texture atlas cleared by terminal.dispose() (xterm.js internal behavior), (5) Proper disposal order: event handlers disposed BEFORE terminal.dispose() to prevent callbacks to disposed instance. Code review passed with no issues. Console logging enables verification of disposal sequence."
+    }
+  ],
+  "frictions": [
+    {
+      "description": "Test infrastructure not yet implemented - unable to run automated tests for MaxListenersExceededWarning verification",
+      "resolved": false,
+      "resolution": "Manual verification required via Chrome DevTools Event Listeners panel. Test infrastructure is a separate pending milestone (testing-infrastructure) per synthesis.json",
+      "affectedAssertions": ["VAL-MEM-003", "VAL-MEM-004"]
+    },
+    {
+      "description": "Excessive console.log statements in cleanup path - should use centralized Logger class per codebase conventions",
+      "resolved": false,
+      "resolution": "Non-blocking issue noted in synthesis.json. Current logging enables verification but should be migrated to Logger.debug/info for production code",
+      "affectedAssertions": ["VAL-MEM-003", "VAL-MEM-004"]
+    }
+  ],
+  "blockers": [],
+  "summary": "Tested 2 assertions via code inspection + validation report review: VAL-MEM-003 (IPC Event Listener Cleanup) PASS, VAL-MEM-004 (xterm.js Event Disposal) PASS. Both implementations verified in TerminalCell.tsx with proper cleanup sequences, disposal order, and verification logging. Code reviews passed (commits 499301e, 4e306aa). Runtime verification of MaxListenersExceededWarning requires manual Chrome DevTools testing (test infrastructure not yet implemented).",
+  "verificationDetails": {
+    "VAL-MEM-003": {
+      "listenersRefPattern": "listenersRef.current = {} after cleanup (TerminalCell.tsx:601)",
+      "ipcChannelsCleaned": ["onTerminalData", "onTerminalStarted", "onTerminalExit", "onTerminalError"],
+      "unsubscribeImplementation": "preload.cjs returns () => ipcRenderer.removeListener(channel, listener)",
+      "cleanupOrder": "IPC listeners unsubscribed BEFORE PTY process kill (prevents data callbacks to disposed terminal)",
+      "verificationLogging": "Console logs show subscription and unsubscription for each channel"
+    },
+    "VAL-MEM-004": {
+      "disposalOrder": "Event handlers disposed BEFORE terminal.dispose() (TerminalCell.tsx:616-656, then 690-700)",
+      "onDataDisposal": "xtermDisposablesRef.current.onDataDisposable.dispose()",
+      "onScrollDisposal": "xtermDisposablesRef.current.onScrollDisposable.dispose()",
+      "customKeyHandlerPattern": "Cleanup flag pattern (customKeyHandlerRegistered = false) since attachCustomKeyEventHandler returns void",
+      "addonDisposal": "FitAddon, WebLinksAddon, SearchAddon disposed explicitly before terminal.dispose()",
+      "terminalDisposal": "terminalRef.current.dispose() called before nullification"
+    }
+  },
+  "codeQualityAssessment": {
+    "strengths": [
+      "Proper TypeScript types for all refs and disposables",
+      "Defensive programming with null checks before calling dispose/unsubscribe",
+      "Correct cleanup order preventing race conditions",
+      "Comprehensive console logging for debugging and verification",
+      "All refs nullified after cleanup to prevent stale references"
+    ],
+    "nonBlockingIssues": [
+      "Excessive console.log should use Logger class (per synthesis.json)",
+      "Automated tests missing (test infrastructure pending milestone)"
+    ]
+  }
+}

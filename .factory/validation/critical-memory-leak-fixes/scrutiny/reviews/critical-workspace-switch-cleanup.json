@@ -1,0 +1,55 @@
+{
+  "featureId": "critical-workspace-switch-cleanup",
+  "reviewedAt": "2026-03-07T14:30:00.000Z",
+  "commitId": "7eb8f97",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "Implementation successfully addresses workspace terminal cleanup for memory leak prevention. Three files modified: TerminalCell.tsx (improved cleanup sequence), terminal.handlers.ts (Windows process tree killing), workspaceStore.ts (cleanup on workspace switch). All changes follow proper disposal order and platform-specific considerations. Build and TypeScript compilation pass. Documentation comprehensive in .factory/library/memory-optimization.md.",
+    "issues": [
+      {
+        "file": "src/stores/workspaceStore.ts",
+        "line": 145,
+        "severity": "non_blocking",
+        "description": "Async cleanup call in setCurrentWorkspace is not awaited before workspace switch occurs. This creates a potential race condition where workspace may switch before cleanup completes. The IPC call returns a promise but it's chained with .then() without being awaited, so the workspace state updates immediately while cleanup happens asynchronously. Consider adding a brief await or at least logging when cleanup completes before the switch visual update."
+      },
+      {
+        "file": "src/components/terminals/TerminalCell.tsx",
+        "line": 620,
+        "severity": "non_blocking",
+        "description": "Excessive logging in cleanup function may impact performance during rapid workspace switches. Seven console.log statements in cleanup path (lines 558-623) add overhead. Consider using Logger.debug() instead or reducing to a single summary log."
+      },
+      {
+        "file": "src/electron/ipc/terminal.handlers.ts",
+        "line": 85,
+        "severity": "non_blocking",
+        "description": "The killPtyProcess function uses spawnSync which is blocking. In cleanupAllTerminals() (line 529+), this is called in a forEach loop synchronously. For workspaces with many terminals, this could cause noticeable delay. Consider using spawnAsync or parallel execution for multiple terminal cleanup."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "conventions",
+      "observation": "Worker added extensive console.log statements for debugging cleanup operations, but the codebase already has a centralized Logger class (src/lib/logger.ts) with proper levels and prefixes. AGENTS.md documents the Logger pattern but doesn't explicitly discourage direct console.log usage.",
+      "evidence": "TerminalCell.tsx lines 558-623 show 7 console.log statements. Compare to src/lib/logger.ts which provides structured logging with levels and prefixes. CLAUDE.md section 'Centralized Logging' documents Logger class but doesn't establish convention against console.log."
+    },
+    {
+      "area": "skills",
+      "observation": "Skill procedure step 2 (Test-Driven Development - RED FIRST) was not followed, but worker documented the deviation in skillFeedback. Test infrastructure is being set up in parallel milestone, so worker used TypeScript compilation as interim validation. The skill should be updated to clarify this fallback workflow when test infrastructure is unavailable.",
+      "evidence": "skillFeedback.deviations in handoff shows worker skipped writing failing tests and ran 'bun tsc --noEmit' instead of 'bun run test'. Feature status shows testing-coverage-infrastructure milestone is 'pending', confirming test infra not available."
+    },
+    {
+      "area": "services",
+      "observation": "services.yaml declares test and test:coverage commands but these are not actually configured in package.json. Worker discovered this and used TypeScript compilation instead. services.yaml should either remove test commands or mark them as 'not_yet_implemented' to avoid confusion for future workers.",
+      "evidence": "services.yaml lists 'test: bun run test' and 'test:coverage: bun run test --coverage' but package.json has no test/lint scripts. Handoff skillFeedback.discoveredIssues notes 'No automated tests added - test infrastructure not yet configured'."
+    },
+    {
+      "area": "knowledge",
+      "observation": "Worker discovered that workspace switching has a race condition between async cleanup completion and synchronous state update. The cleanup IPC call is fired but not awaited, so visually the workspace switches before cleanup logs confirm completion. This is a subtle timing issue that should be documented for future terminal lifecycle work.",
+      "evidence": "workspaceStore.ts line 145-157 shows cleanupWorkspaceTerminals IPC call without await. The promise is chained with .then() for logging but the setCurrentWorkspace set() returns immediately. This means state.currentWorkspace updates before previous workspace terminals are confirmed killed."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "Feature implementation PASSES review. The worker successfully implemented complete workspace terminal cleanup across three critical files with proper disposal order (timers → ResizeObserver → IPC listeners → PTY process → xterm.js → container → flags). Windows process tree killing with taskkill /f /t is correctly implemented with fallback logic. Scrollback buffer configured to 1000 lines. Build passes (80 modules transformed), TypeScript type checking passes (0 errors). Documentation created in .factory/library/memory-optimization.md covering all VAL-MEM-001 through VAL-MEM-004 and VAL-PERF-002, VAL-PERF-003 assertions.\n\nThree non-blocking issues noted: (1) Async cleanup race condition in workspaceStore - cleanup not awaited before switch, (2) Excessive console.log in TerminalCell cleanup path - should use Logger class, (3) Blocking spawnSync in cleanupAllTerminals loop - could impact performance with many terminals.\n\nSkill deviation documented: No automated tests written due to test infrastructure not yet available (parallel milestone pending). Worker correctly used TypeScript compilation as interim validation.\n\nShared state gaps identified: services.yaml lists test commands that don't exist, Logger convention not enforced in AGENTS.md, workspace switch race condition should be documented for future reference.\n\nRecommendation: PASS with suggestion to address non-blocking issues in follow-up PR, particularly the async cleanup race condition and Logger adoption."
+}
