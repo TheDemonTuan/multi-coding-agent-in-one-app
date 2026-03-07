@@ -3,15 +3,40 @@
  * Handles workspace CRUD operations
  */
 
-import { ipcMain } from 'electron';
+import { ipcMain, BrowserWindow } from 'electron';
 import Store from 'electron-store';
 import { IPC_CHANNELS, STORAGE_KEYS } from '../../config/constants';
 import { logger } from '../../lib/logger';
 import { getTerminalProcesses, getTerminalWorkspaceMap } from './terminal.handlers';
+import { autoPatchIfNeeded } from './terminal.handlers';
 
 const log = logger.child('[IPC:Workspace]');
 
-export function initializeWorkspaceHandlers(store: Store) {
+/**
+ * Check if workspace has Claude Code terminals and trigger auto-patch if needed
+ * This is called when switching to a workspace to ensure the patch is up-to-date
+ */
+export async function validatePatchForWorkspace(
+  store: Store,
+  mainWindow: BrowserWindow | null,
+  workspace: any
+): Promise<void> {
+  if (!workspace || !workspace.terminals) {
+    return;
+  }
+
+  // Check if any terminal has Claude Code agent enabled
+  const hasClaudeCode = workspace.terminals.some((term: any) => {
+    return term.agent?.type === 'claude-code' && term.agent?.enabled !== false;
+  });
+
+  if (hasClaudeCode) {
+    log.debug('Workspace has Claude Code terminals, checking patch status...');
+    await autoPatchIfNeeded(store, mainWindow);
+  }
+}
+
+export function initializeWorkspaceHandlers(store: Store, mainWindow: BrowserWindow | null) {
   // Get workspaces
   ipcMain.handle(IPC_CHANNELS.GET_WORKSPACES, () => {
     try {
@@ -91,6 +116,17 @@ export function initializeWorkspaceHandlers(store: Store) {
     } catch (err: any) {
       log.error('Failed to switch workspace', { error: err.message });
       return null;
+    }
+  });
+
+  // Validate patch for workspace (called when switching workspaces)
+  ipcMain.handle(IPC_CHANNELS.VALIDATE_PATCH_FOR_WORKSPACE, async (event, { workspace }) => {
+    try {
+      await validatePatchForWorkspace(store, mainWindow, workspace);
+      return { success: true };
+    } catch (err: any) {
+      log.error('Failed to validate patch for workspace', { error: err.message });
+      return { success: false, error: err.message };
     }
   });
 }

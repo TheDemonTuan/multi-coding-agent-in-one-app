@@ -3,7 +3,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import Store from 'electron-store';
 import { logger } from '../lib/logger';
-import { initializeAllHandlers, cleanupAllTerminals } from './ipc';
+import { initializeAllHandlers, cleanupAllTerminals, validatePatchOnStartup } from './ipc';
 import { applyVietnameseImePatch, isVietnameseImePatched } from '../utils/vietnameseImePatch';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -176,6 +176,12 @@ app.whenReady().then(() => {
   // Initialize all IPC handlers
   initializeAllHandlers(mainWindow, store);
   log.info('All IPC handlers initialized');
+
+  // Validate Vietnamese IME patch on startup (check for version mismatch after Claude Code auto-update)
+  // Works with Claude Code installed via npm, bun, pnpm, or binary
+  validatePatchOnStartup(store, mainWindow).catch(err => {
+    log.error('Startup patch validation failed', { error: err.message });
+  });
 });
 
 app.on('window-all-closed', () => {

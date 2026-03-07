@@ -24,6 +24,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   deleteWorkspace: (id) => ipcRenderer.invoke('delete-workspace', { id }),
   switchWorkspace: (id) => ipcRenderer.invoke('switch-workspace', { id }),
   getWorkspaces: () => ipcRenderer.invoke('get-workspaces'),
+  validatePatchForWorkspace: (workspace) => ipcRenderer.invoke('validate-patch-for-workspace', { workspace }),
 
   // Terminal management
   spawnTerminal: (id, cwd, workspaceId) => ipcRenderer.invoke('spawn-terminal', { id, cwd, workspaceId }),

@@ -150,6 +150,8 @@ export function getTerminalWorkspaceMap() {
   return terminalWorkspaceMap;
 }
 
+export { autoPatchIfNeeded };
+
 export function initializeTerminalHandlers(mainWindow: BrowserWindow | null, store: Store) {
   // Spawn terminal
   ipcMain.handle(IPC_CHANNELS.SPAWN_TERMINAL, (event, { id, cwd, workspaceId }) => {

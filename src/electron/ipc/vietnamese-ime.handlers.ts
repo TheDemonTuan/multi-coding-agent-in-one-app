@@ -14,9 +14,14 @@ import {
   restoreFromBackup,
   validatePatch,
   extractClaudeVersion,
+  getCurrentClaudeVersion,
+  isVersionMismatched,
 } from '../../utils/vietnameseImePatch';
 
 const log = logger.child('[IPC:VietnameseIME]');
+
+// Prevent concurrent patch operations
+let isPatching = false;
 
 export function initializeVietnameseIMEHandlers(mainWindow: BrowserWindow | null, store: Store) {
   // Apply Vietnamese IME patch
@@ -188,17 +193,17 @@ export function initializeVietnameseIMEHandlers(mainWindow: BrowserWindow | null
   // Restart Claude terminals
   ipcMain.handle(IPC_CHANNELS.RESTART_CLAUDE_TERMINALS, async (event, { workspaceId, terminals }) => {
     log.info('Restarting Claude terminals for workspace', { workspaceId });
-    
+
     try {
       // First, clean up existing terminals
       await (ipcMain.handle as any)(IPC_CHANNELS.CLEANUP_WORKSPACE_TERMINALS, { workspaceId });
-      
+
       // Wait a bit for cleanup
       await new Promise(resolve => setTimeout(resolve, 300));
-      
+
       // Restart each terminal
       const restarted: Array<{ id: string; success: boolean; error?: string }> = [];
-      
+
       for (const term of terminals) {
         try {
           const result = await (ipcMain.handle as any)(IPC_CHANNELS.SPAWN_TERMINAL_WITH_AGENT, {
@@ -207,7 +212,7 @@ export function initializeVietnameseIMEHandlers(mainWindow: BrowserWindow | null
             agentConfig: term.agentConfig,
             workspaceId,
           });
-          
+
           restarted.push({
             id: term.id,
             success: result?.success,
@@ -221,15 +226,120 @@ export function initializeVietnameseIMEHandlers(mainWindow: BrowserWindow | null
           });
         }
       }
-      
+
       log.info('Restarted terminals', { successCount: restarted.filter(r => r.success).length });
-      
+
       return { success: true, restarted };
     } catch (err: any) {
       log.error('Failed to restart terminals', { error: err.message });
       return { success: false, error: err.message };
     }
   });
+}
+
+/**
+ * Validate and apply Vietnamese IME patch on app startup
+ * This function checks if auto-patch is enabled and if the current Claude Code version
+ * differs from the patched version, then applies the patch if needed.
+ *
+ * Works with Claude Code installed via npm, bun, pnpm, or binary.
+ *
+ * @param store - Electron store for accessing Vietnamese IME settings
+ * @param mainWindow - Main browser window for sending IPC events
+ */
+export async function validatePatchOnStartup(store: Store, mainWindow: BrowserWindow | null): Promise<void> {
+  // Prevent concurrent patch operations
+  if (isPatching) {
+    log.debug('Patch already running, skipping startup validation');
+    return;
+  }
+
+  isPatching = true;
+  try {
+    const vnSettings = store.get(STORAGE_KEYS.VIETNAMESE_IME, { enabled: false, autoPatch: true }) as any;
+
+    // Skip if Vietnamese IME or auto-patch is disabled
+    if (!vnSettings.enabled || !vnSettings.autoPatch) {
+      log.debug('Vietnamese IME or auto-patch disabled, skipping startup validation', {
+        enabled: vnSettings.enabled,
+        autoPatch: vnSettings.autoPatch
+      });
+      return;
+    }
+
+    // Get current Claude Code version
+    const currentVersion = getCurrentClaudeVersion();
+    const patchedVersion = vnSettings.patchedVersion;
+
+    log.info('Checking Vietnamese IME patch status on startup...', {
+      currentVersion: currentVersion || 'unknown',
+      patchedVersion: patchedVersion || 'not patched',
+      enabled: vnSettings.enabled,
+      autoPatch: vnSettings.autoPatch
+    });
+
+    // Check if version mismatch exists
+    const hasMismatch = isVersionMismatched(currentVersion, patchedVersion);
+
+    if (!hasMismatch) {
+      log.debug('No version mismatch detected on startup', {
+        currentVersion: currentVersion || 'unknown',
+        patchedVersion: patchedVersion || 'not patched'
+      });
+      return;
+    }
+
+    // Version mismatch detected - auto-repatch
+    log.info('=== Startup Auto-Repatch ===');
+    log.info('Version mismatch detected: old=' + (patchedVersion || 'none') + ', new=' + (currentVersion || 'unknown'));
+    log.info('Starting auto-repatch process...');
+
+    try {
+      const result = await applyVietnameseImePatch();
+
+      if (result.success) {
+        log.info('Startup auto-repatch completed successfully!');
+
+        // Update patchedVersion in store
+        if (result.version) {
+          const updatedSettings = {
+            ...vnSettings,
+            patchedVersion: result.version,
+            lastPatchStatus: 'success' as const,
+            lastPatchPath: result.patchedPath
+          };
+          store.set(STORAGE_KEYS.VIETNAMESE_IME, updatedSettings);
+          log.info('patchedVersion storage update: ' + (patchedVersion || 'none') + ' → ' + result.version);
+        } else {
+          log.warn('Startup auto-repatch succeeded but version not extracted from result');
+        }
+
+        // Notify renderer
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send(IPC_CHANNELS.VIETNAMESE_IME_PATCH_APPLIED, result);
+          log.debug('Sent vietnamese-ime-patch-applied event to renderer');
+        }
+      } else {
+        log.warn('Startup auto-repatch result: failed', {
+          reason: result.message,
+          alreadyPatched: result.alreadyPatched
+        });
+      }
+    } catch (err: any) {
+      log.error('Startup auto-repatch error occurred', {
+        error: err.message,
+        code: err.code,
+        stack: err.stack
+      });
+
+      // Handle file locked errors gracefully
+      if (err.code === 'EBUSY') {
+        log.warn('Claude Code file is locked (may be updating in background), skipping startup auto-patch');
+      }
+    }
+  } finally {
+    isPatching = false;
+  }
 }
 
 const BACKUP_EXTENSION = '.vn-backup';

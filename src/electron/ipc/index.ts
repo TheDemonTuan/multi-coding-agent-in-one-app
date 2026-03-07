@@ -13,16 +13,18 @@ import { initializeTemplateHandlers } from './template.handlers';
 import { initializeWindowHandlers } from './window.handlers';
 import { initializeSystemHandlers } from './system.handlers';
 import { initializeTerminalHistoryHandlers } from './terminal-history.handlers';
-import { initializeVietnameseIMEHandlers } from './vietnamese-ime.handlers';
+import { initializeVietnameseIMEHandlers, validatePatchOnStartup } from './vietnamese-ime.handlers';
 
-export { cleanupAllTerminals, getTerminalProcesses, getTerminalWorkspaceMap } from './terminal.handlers';
+export { cleanupAllTerminals, getTerminalProcesses, getTerminalWorkspaceMap, autoPatchIfNeeded } from './terminal.handlers';
+export { validatePatchOnStartup } from './vietnamese-ime.handlers';
+export { validatePatchForWorkspace } from './workspace.handlers';
 
 export function initializeAllHandlers(
   mainWindow: BrowserWindow | null,
   store: Store
 ) {
   initializeTerminalHandlers(mainWindow, store);
-  initializeWorkspaceHandlers(store);
+  initializeWorkspaceHandlers(store, mainWindow);
   initializeStoreHandlers(store);
   initializeTemplateHandlers(store);
   initializeWindowHandlers(mainWindow);

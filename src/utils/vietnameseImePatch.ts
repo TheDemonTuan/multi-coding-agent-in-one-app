@@ -199,22 +199,35 @@ function insertCode(content: string, index: number, code: string): string {
 
 /**
  * Extract Claude Code version from file content
+ * Note: For binary files (claude.exe), version is embedded as "Version: X.X.X"
+ * For JS files, version is in format "version": "X.X.X"
  */
 export function extractClaudeVersion(content: string): string | null {
-  // Look for version patterns
-  const versionPatterns = [
-    /["']version["']\s*:\s*["']([\d.]+)["']/,
-    /version\s*=\s*["']([\d.]+)["']/,
-    /@anthropic-ai\/claude-code@([\d.]+)/,
-  ];
-  
-  for (const pattern of versionPatterns) {
-    const match = content.match(pattern);
-    if (match && match[1]) {
-      return match[1];
-    }
+  // Pattern 1: Binary file format - "Version: X.X.X" where X.X.X is semantic version
+  // Must match full semantic version (major.minor.patch) to avoid false positives
+  let match = content.match(/Version:\s*(\d+\.\d+\.\d+)/i);
+  if (match && match[1]) {
+    return match[1];
   }
-  
+
+  // Pattern 2: JS format - "version": "X.X.X"
+  match = content.match(/["']version["']\s*:\s*["']([\d.]+)["']/);
+  if (match && match[1]) {
+    return match[1];
+  }
+
+  // Pattern 3: Alternative format - version = "X.X.X" or version: "X.X.X"
+  match = content.match(/version\s*[:=]\s*["']?([\d.]+)["']?/i);
+  if (match && match[1]) {
+    return match[1];
+  }
+
+  // Pattern 4: npm package format
+  match = content.match(/@anthropic-ai\/claude-code@([\d.]+)/i);
+  if (match && match[1]) {
+    return match[1];
+  }
+
   return null;
 }
 

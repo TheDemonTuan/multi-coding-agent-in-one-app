@@ -152,6 +152,15 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => {
 
         return newState;
       });
+
+      // Validate Vietnamese IME patch when switching to a workspace with Claude Code terminals
+      // This ensures the patch is up-to-date after Claude Code auto-updates
+      // Works with Claude Code installed via npm, bun, pnpm, or binary
+      if (typeof window !== 'undefined' && (window as any).electronAPI) {
+        (window as any).electronAPI.validatePatchForWorkspace(workspace).catch((err: any) => {
+          console.error('[WorkspaceStore] Patch validation failed:', err);
+        });
+      }
     },
 
     addWorkspace: (config) => {

@@ -65,6 +65,7 @@ export const IPC_CHANNELS = {
   CREATE_WORKSPACE: 'create-workspace',
   DELETE_WORKSPACE: 'delete-workspace',
   SWITCH_WORKSPACE: 'switch-workspace',
+  VALIDATE_PATCH_FOR_WORKSPACE: 'validate-patch-for-workspace',
   
   // Store
   GET_STORE_VALUE: 'get-store-value',
