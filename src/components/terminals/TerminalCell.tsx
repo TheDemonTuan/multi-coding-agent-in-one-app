@@ -114,6 +114,15 @@ export const TerminalCell: React.FC<TerminalCellProps> = ({
     unsubscribeError?: () => void;
   }>({});
 
+  // Store xterm.js event disposables (VAL-MEM-004)
+  // xterm.js returns IDisposable objects from onEvent methods, but void from attachCustomKeyEventHandler
+  const xtermDisposablesRef = useRef<{
+    onDataDisposable?: { dispose(): void };
+    onScrollDisposable?: { dispose(): void };
+    // attachCustomKeyEventHandler returns void, so we store a cleanup flag instead
+    customKeyHandlerCleanup?: () => void;
+  }>({});
+
   const [hasStarted, setHasStarted] = useState(false);
   const theme = useWorkspaceStore((state: any) => state.theme);
   const { updateTerminalStatus, setTerminalProcessId, currentWorkspace } = useWorkspaceStore();
@@ -385,56 +394,6 @@ export const TerminalCell: React.FC<TerminalCellProps> = ({
       });
     });
 
-    term.attachCustomKeyEventHandler((e: KeyboardEvent) => {
-      if (e.type !== 'keydown') return true;
-
-      // Ctrl+Tab: Switch to next workspace
-      if (e.ctrlKey && e.key === 'Tab') {
-        e.preventDefault();
-        const nextWs = getNextWorkspace();
-        if (nextWs) {
-          setCurrentWorkspace(nextWs);
-          // Dispatch custom event to notify App.tsx to open workspace switcher modal
-          window.dispatchEvent(new CustomEvent('open-workspace-switcher'));
-        }
-        return false;
-      }
-
-      // Ctrl+Shift+Tab: Switch to previous workspace
-      if (e.ctrlKey && e.shiftKey && e.key === 'Tab') {
-        e.preventDefault();
-        const prevWs = getPreviousWorkspace();
-        if (prevWs) {
-          setCurrentWorkspace(prevWs);
-          // Dispatch custom event to notify App.tsx to open workspace switcher modal
-          window.dispatchEvent(new CustomEvent('open-workspace-switcher'));
-        }
-        return false;
-      }
-
-      // Ctrl+C or Ctrl+Shift+C: copy selected text instead of sending SIGINT
-      if ((e.ctrlKey || e.metaKey) && e.key === 'c') {
-        const selection = term.getSelection();
-        if (selection) {
-          e.preventDefault();
-          navigator.clipboard.writeText(selection);
-          term.clearSelection();
-          return false;
-        }
-      }
-
-      // Ctrl+V or Ctrl+Shift+V: paste from clipboard
-      if ((e.ctrlKey || e.metaKey) && e.key === 'v') {
-        e.preventDefault();
-        navigator.clipboard.readText().then((text) => {
-          (window as any).electronAPI?.terminalWrite(terminal.id, text);
-        });
-        return false;
-      }
-
-      return true;
-    });
-
     terminalRef.current = term;
     fitAddonRef.current = fitAddon;
     webLinksAddonRef.current = webLinksAddon;
@@ -470,7 +429,9 @@ export const TerminalCell: React.FC<TerminalCellProps> = ({
     });
     resizeObserverRef.current.observe(containerRef.current);
 
-    term.onScroll(handleScroll);
+    // Store onScroll handler disposable (VAL-MEM-004)
+    xtermDisposablesRef.current.onScrollDisposable = term.onScroll(handleScroll);
+    console.log(`[TerminalCell ${terminal.id}] Registered onScroll handler`);
 
     if (terminal.agent?.enabled && terminal.agent.type !== 'none') {
       const agentIcon = agentIcons[terminal.agent.type] || '🔧';
@@ -530,9 +491,73 @@ export const TerminalCell: React.FC<TerminalCellProps> = ({
       }
     });
 
-    term.onData((data: string) => {
+    // Store onData handler disposable (VAL-MEM-004)
+    xtermDisposablesRef.current.onDataDisposable = term.onData((data: string) => {
       (window as any).electronAPI.terminalWrite(terminal.id, data);
     });
+    console.log(`[TerminalCell ${terminal.id}] Registered onData handler`);
+
+    // Register custom key event handler (VAL-MEM-004)
+    // attachCustomKeyEventHandler returns void, so we store a cleanup function
+    let customKeyHandlerRegistered = true;
+    term.attachCustomKeyEventHandler((e: KeyboardEvent) => {
+      // Handler is no longer registered, don't process events
+      if (!customKeyHandlerRegistered) return true;
+      
+      if (e.type !== 'keydown') return true;
+
+      // Ctrl+Tab: Switch to next workspace
+      if (e.ctrlKey && e.key === 'Tab') {
+        e.preventDefault();
+        const nextWs = getNextWorkspace();
+        if (nextWs) {
+          setCurrentWorkspace(nextWs);
+          // Dispatch custom event to notify App.tsx to open workspace switcher modal
+          window.dispatchEvent(new CustomEvent('open-workspace-switcher'));
+        }
+        return false;
+      }
+
+      // Ctrl+Shift+Tab: Switch to previous workspace
+      if (e.ctrlKey && e.shiftKey && e.key === 'Tab') {
+        e.preventDefault();
+        const prevWs = getPreviousWorkspace();
+        if (prevWs) {
+          setCurrentWorkspace(prevWs);
+          // Dispatch custom event to notify App.tsx to open workspace switcher modal
+          window.dispatchEvent(new CustomEvent('open-workspace-switcher'));
+        }
+        return false;
+      }
+
+      // Ctrl+C or Ctrl+Shift+C: copy selected text instead of sending SIGINT
+      if ((e.ctrlKey || e.metaKey) && e.key === 'c') {
+        const selection = term.getSelection();
+        if (selection) {
+          e.preventDefault();
+          navigator.clipboard.writeText(selection);
+          term.clearSelection();
+          return false;
+        }
+      }
+
+      // Ctrl+V or Ctrl+Shift+V: paste from clipboard
+      if ((e.ctrlKey || e.metaKey) && e.key === 'v') {
+        e.preventDefault();
+        navigator.clipboard.readText().then((text) => {
+          (window as any).electronAPI?.terminalWrite(terminal.id, text);
+        });
+        return false;
+      }
+
+      return true;
+    });
+    
+    // Store cleanup function to mark handler as unregistered
+    xtermDisposablesRef.current.customKeyHandlerCleanup = () => {
+      customKeyHandlerRegistered = false;
+    };
+    console.log(`[TerminalCell ${terminal.id}] Registered custom key event handler`);
 
     // Spawn terminal process
     const workspaceId = currentWorkspace?.id;
@@ -607,6 +632,33 @@ export const TerminalCell: React.FC<TerminalCellProps> = ({
         });
       }
 
+      // Dispose xterm.js event handlers (VAL-MEM-004)
+      // Must be done BEFORE terminal.dispose() to properly detach all handlers
+      console.log(`[TerminalCell ${terminal.id}] Disposing xterm.js event handlers...`);
+      
+      // Dispose onData handler
+      if (xtermDisposablesRef.current.onDataDisposable) {
+        console.log(`[TerminalCell ${terminal.id}] Disposing onData handler`);
+        xtermDisposablesRef.current.onDataDisposable.dispose();
+        xtermDisposablesRef.current.onDataDisposable = undefined;
+      }
+
+      // Dispose onScroll handler
+      if (xtermDisposablesRef.current.onScrollDisposable) {
+        console.log(`[TerminalCell ${terminal.id}] Disposing onScroll handler`);
+        xtermDisposablesRef.current.onScrollDisposable.dispose();
+        xtermDisposablesRef.current.onScrollDisposable = undefined;
+      }
+
+      // Cleanup custom key event handler
+      if (xtermDisposablesRef.current.customKeyHandlerCleanup) {
+        console.log(`[TerminalCell ${terminal.id}] Disposing custom key event handler`);
+        xtermDisposablesRef.current.customKeyHandlerCleanup();
+        xtermDisposablesRef.current.customKeyHandlerCleanup = undefined;
+      }
+
+      console.log(`[TerminalCell ${terminal.id}] xterm.js event handlers disposed`);
+
       // Dispose xterm.js terminal and all addons (VAL-MEM-004)
       // Dispose addons explicitly before terminal disposal for clarity
       // Note: terminal.dispose() will dispose all loaded addons automatically,
@@ -639,13 +691,12 @@ export const TerminalCell: React.FC<TerminalCellProps> = ({
       }
 
       // Dispose the terminal instance - this handles:
-      // - terminal.onData handlers removal
-      // - terminal.onScroll handlers removal  
-      // - Custom key event handlers detachment
       // - Texture atlas clearing
       // - WebGL context release (if WebGL addon is active)
+      // - Any remaining internal cleanup
       if (terminalRef.current) {
         try {
+          console.log(`[TerminalCell ${terminal.id}] Calling terminal.dispose()`);
           terminalRef.current.dispose();
         } catch (err: any) {
           console.error(`[TerminalCell ${terminal.id}] Error disposing terminal:`, err);
@@ -659,6 +710,8 @@ export const TerminalCell: React.FC<TerminalCellProps> = ({
       }
 
       // Nullify all refs to prevent stale references (VAL-MEM-002)
+      // Clear xterm disposables ref
+      xtermDisposablesRef.current = {};
       hasInitializedRef.current = false;
       hasInitiallyFitRef.current = false;
       isInitialFitCompleteRef.current = false;

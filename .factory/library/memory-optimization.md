@@ -223,31 +223,57 @@ xterm.js event handlers (`onData`, `onScroll`, key handlers) not being disposed,
 - Write operations to disposed terminals
 
 ### Solution
-Call `terminal.dispose()` which automatically handles:
-- All `terminal.onData` handlers removal
-- All `terminal.onScroll` handlers removal
-- Custom key event handlers detachment
-- Texture atlas clearing
-- WebGL context release (if WebGL addon is active)
+Store and dispose all xterm.js event handlers explicitly BEFORE calling `terminal.dispose()`:
 
 ```typescript
-if (terminalRef.current) {
-  try {
-    terminalRef.current.dispose();
-  } catch (err: any) {
-    console.error(`[TerminalCell ${terminal.id}] Error disposing terminal:`, err);
-  }
-  terminalRef.current = null;
+// Store xterm.js event disposables (VAL-MEM-004)
+// xterm.js returns IDisposable objects from onEvent methods
+const xtermDisposablesRef = useRef<{
+  onDataDisposable?: { dispose(): void };
+  onScrollDisposable?: { dispose(): void };
+  // attachCustomKeyEventHandler returns void, so we store a cleanup flag instead
+  customKeyHandlerCleanup?: () => void;
+}>({});
+
+// During initialization - store disposables
+xtermDisposablesRef.current.onScrollDisposable = term.onScroll(handleScroll);
+xtermDisposablesRef.current.onDataDisposable = term.onData((data: string) => {
+  (window as any).electronAPI.terminalWrite(terminal.id, data);
+});
+
+// For custom key event handler (returns void, use cleanup flag)
+let customKeyHandlerRegistered = true;
+term.attachCustomKeyEventHandler((e: KeyboardEvent) => {
+  if (!customKeyHandlerRegistered) return true;
+  // ... handler logic
+});
+xtermDisposablesRef.current.customKeyHandlerCleanup = () => {
+  customKeyHandlerRegistered = false;
+};
+
+// During cleanup - dispose all handlers BEFORE terminal.dispose()
+if (xtermDisposablesRef.current.onDataDisposable) {
+  xtermDisposablesRef.current.onDataDisposable.dispose();
 }
+if (xtermDisposablesRef.current.onScrollDisposable) {
+  xtermDisposablesRef.current.onScrollDisposable.dispose();
+}
+if (xtermDisposablesRef.current.customKeyHandlerCleanup) {
+  xtermDisposablesRef.current.customKeyHandlerCleanup();
+}
+
+// Then dispose terminal
+terminalRef.current.dispose();
 ```
 
 **Note:** `terminal.dispose()` automatically disposes all loaded addons (FitAddon, WebLinksAddon, SearchAddon).
 
 ### Verification
-- Console log showing dispose call sequence
-- Chrome DevTools Performance > Event Listeners panel
-- WebGL context count before/after terminal disposal
-- No "write to disposed terminal" errors
+- ✅ Console log showing dispose call sequence with handler disposal logs
+- ✅ Chrome DevTools Performance > Event Listeners panel shows no orphaned listeners
+- ✅ WebGL context count before/after terminal disposal returns to baseline
+- ✅ No "write to disposed terminal" errors
+- ✅ Memory heap snapshot showing no terminal references after cleanup
 
 ---
 
