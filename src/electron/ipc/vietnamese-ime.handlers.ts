@@ -60,6 +60,10 @@ export function initializeVietnameseIMEHandlers(mainWindow: BrowserWindow | null
     const isPatched = isVietnameseImePatched();
     const claudePath = findClaudePath();
     
+    // Get patchedVersion from store
+    const currentSettings = store.get(STORAGE_KEYS.VIETNAMESE_IME, {}) as any;
+    const patchedVersion = currentSettings.patchedVersion;
+    
     // Check for backup file
     const hasBackup = claudePath && fs.existsSync(claudePath + BACKUP_EXTENSION);
     
@@ -88,6 +92,7 @@ export function initializeVietnameseIMEHandlers(mainWindow: BrowserWindow | null
       hasBackup,
       installedVia,
       version,
+      patchedVersion, // Return patchedVersion from store for UI display
     };
   });
 
@@ -102,8 +107,10 @@ export function initializeVietnameseIMEHandlers(mainWindow: BrowserWindow | null
         const currentSettings = store.get(STORAGE_KEYS.VIETNAMESE_IME, {}) as any;
         store.set(STORAGE_KEYS.VIETNAMESE_IME, {
           ...currentSettings,
-          lastPatchStatus: 'failed' as const, // Cleared patch
+          lastPatchStatus: 'failed' as const,
+          patchedVersion: undefined, // Clear patchedVersion since file is restored to original
         });
+        log.info('Cleared patchedVersion after restore');
       }
       
       return result;

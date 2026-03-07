@@ -748,6 +748,7 @@ export function validatePatch(): PatchValidation {
 
 /**
  * Check patch status
+ * Note: For electron-store access, use the IPC handler instead which returns patchedVersion from store
  */
 export function checkPatchStatus(): {
   isPatched: boolean;
