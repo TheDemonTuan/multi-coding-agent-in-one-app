@@ -97,6 +97,7 @@ export const TerminalCell: React.FC<TerminalCellProps> = ({
   const containerRef = useRef<HTMLDivElement>(null);
   const terminalRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
+  const webLinksAddonRef = useRef<WebLinksAddon | null>(null);
   const searchAddonRef = useRef<SearchAddon | null>(null);
   const resizeObserverRef = useRef<ResizeObserver | null>(null);
   const hasInitializedRef = useRef(false);
@@ -436,6 +437,7 @@ export const TerminalCell: React.FC<TerminalCellProps> = ({
 
     terminalRef.current = term;
     fitAddonRef.current = fitAddon;
+    webLinksAddonRef.current = webLinksAddon;
     searchAddonRef.current = searchAddon;
     hasInitializedRef.current = true;
 
@@ -558,23 +560,31 @@ export const TerminalCell: React.FC<TerminalCellProps> = ({
     return () => {
       console.log(`[TerminalCell ${terminal.id}] Cleaning up terminal`);
 
-      // Clear any pending debounce timers first
+      // Clear any pending debounce timers first to prevent memory leaks
       if (fitDebounceRef.current) {
         clearTimeout(fitDebounceRef.current);
         fitDebounceRef.current = null;
       }
 
-      // Disconnect ResizeObserver before disposing terminal
+      // Disconnect ResizeObserver to prevent layout observation after unmount
       if (resizeObserverRef.current) {
         resizeObserverRef.current.disconnect();
         resizeObserverRef.current = null;
       }
 
       // Unsubscribe all IPC event listeners to prevent memory leaks (VAL-MEM-003)
-      listenersRef.current.unsubscribeData?.();
-      listenersRef.current.unsubscribeStarted?.();
-      listenersRef.current.unsubscribeExit?.();
-      listenersRef.current.unsubscribeError?.();
+      if (listenersRef.current.unsubscribeData) {
+        listenersRef.current.unsubscribeData();
+      }
+      if (listenersRef.current.unsubscribeStarted) {
+        listenersRef.current.unsubscribeStarted();
+      }
+      if (listenersRef.current.unsubscribeExit) {
+        listenersRef.current.unsubscribeExit();
+      }
+      if (listenersRef.current.unsubscribeError) {
+        listenersRef.current.unsubscribeError();
+      }
       listenersRef.current = {};
 
       // Kill PTY process in main process BEFORE disposing UI terminal
@@ -586,16 +596,44 @@ export const TerminalCell: React.FC<TerminalCellProps> = ({
       }
 
       // Dispose xterm.js terminal and all addons (VAL-MEM-004)
-      // dispose() automatically handles:
+      // Dispose addons explicitly before terminal disposal for clarity
+      // Note: terminal.dispose() will dispose all loaded addons automatically,
+      // but we dispose them explicitly here for better debugging and clarity
+      if (fitAddonRef.current) {
+        try {
+          fitAddonRef.current.dispose();
+        } catch (err: any) {
+          console.warn(`[TerminalCell ${terminal.id}] Error disposing FitAddon:`, err);
+        }
+        fitAddonRef.current = null;
+      }
+
+      if (webLinksAddonRef.current) {
+        try {
+          webLinksAddonRef.current.dispose();
+        } catch (err: any) {
+          console.warn(`[TerminalCell ${terminal.id}] Error disposing WebLinksAddon:`, err);
+        }
+        webLinksAddonRef.current = null;
+      }
+
+      if (searchAddonRef.current) {
+        try {
+          searchAddonRef.current.dispose();
+        } catch (err: any) {
+          console.warn(`[TerminalCell ${terminal.id}] Error disposing SearchAddon:`, err);
+        }
+        searchAddonRef.current = null;
+      }
+
+      // Dispose the terminal instance - this handles:
       // - terminal.onData handlers removal
-      // - terminal.onScroll handlers removal
-      // - All addons (FitAddon, WebLinksAddon, SearchAddon) disposal
+      // - terminal.onScroll handlers removal  
+      // - Custom key event handlers detachment
       // - Texture atlas clearing
       // - WebGL context release (if WebGL addon is active)
       if (terminalRef.current) {
         try {
-          // Dispose addons explicitly first for clarity
-          // Note: terminal.dispose() will dispose all loaded addons automatically
           terminalRef.current.dispose();
         } catch (err: any) {
           console.error(`[TerminalCell ${terminal.id}] Error disposing terminal:`, err);
@@ -603,16 +641,17 @@ export const TerminalCell: React.FC<TerminalCellProps> = ({
         terminalRef.current = null;
       }
 
-      // Clear container
+      // Clear container to ensure no DOM references remain
       if (containerRef.current) {
         containerRef.current.innerHTML = '';
       }
 
-      // Reset initialization flags to prevent stale references (VAL-MEM-002)
+      // Nullify all refs to prevent stale references (VAL-MEM-002)
       hasInitializedRef.current = false;
       hasInitiallyFitRef.current = false;
       isInitialFitCompleteRef.current = false;
       dataBufferRef.current = [];
+      lastDimensionsRef.current = null;
     };
   }, []);
 
