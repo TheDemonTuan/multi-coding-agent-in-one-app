@@ -59,6 +59,7 @@ export const IPC_CHANNELS = {
   TERMINAL_STARTED: 'terminal-started',
   TERMINAL_DATA: 'terminal-data',
   TERMINAL_EXIT: 'terminal-exit',
+  TERMINAL_ERROR: 'terminal-error',
   
   // Workspace
   GET_WORKSPACES: 'get-workspaces',
@@ -110,6 +111,7 @@ export const EVENTS = {
   TERMINAL_DATA: 'terminal-data',
   TERMINAL_EXIT: 'terminal-exit',
   TERMINAL_STARTED: 'terminal-started',
+  TERMINAL_ERROR: 'terminal-error',
   VIETNAMESE_IME_PATCH_APPLIED: 'vietnamese-ime-patch-applied',
   OPEN_WORKSPACE_SWITCHER: 'open-workspace-switcher',
 } as const;

@@ -6,6 +6,8 @@
 import { ipcMain, BrowserWindow } from 'electron';
 import Store from 'electron-store';
 import * as pty from 'node-pty';
+import * as fs from 'fs';
+import * as path from 'path';
 import { IPC_CHANNELS, DEFAULT_TERMINAL_COLS, DEFAULT_TERMINAL_ROWS, STORAGE_KEYS } from '../../config/constants';
 import { logger } from '../../lib/logger';
 import { 
@@ -16,6 +18,44 @@ import {
   isVersionMismatched,
   findClaudePath 
 } from '../../utils/vietnameseImePatch';
+
+/**
+ * Validate working directory exists and is accessible
+ */
+function validateWorkingDirectory(cwd: string): { valid: boolean; error?: string } {
+  try {
+    // Handle special paths
+    if (!cwd || cwd === '.' || cwd === './') {
+      return { valid: true };
+    }
+
+    const resolvedPath = path.resolve(cwd);
+    
+    if (!fs.existsSync(resolvedPath)) {
+      return { 
+        valid: false, 
+        error: `Thư mục không tồn tại: ${cwd}. Vui lòng chọn thư mục khác hoặc sử dụng Browse để chọn.` 
+      };
+    }
+
+    const stats = fs.statSync(resolvedPath);
+    if (!stats.isDirectory()) {
+      return { 
+        valid: false, 
+        error: `Đường dẫn không phải thư mục: ${cwd}. Vui lòng chọn một thư mục hợp lệ.` 
+      };
+    }
+
+    // Try to read directory to check permissions
+    fs.readdirSync(resolvedPath);
+    return { valid: true };
+  } catch (err: any) {
+    return { 
+      valid: false, 
+      error: `Không thể truy cập thư mục: ${cwd}. Lỗi: ${err.message || 'Permission denied'}` 
+    };
+  }
+}
 
 const log = logger.child('[IPC:Terminal]');
 
@@ -157,6 +197,23 @@ export function initializeTerminalHandlers(mainWindow: BrowserWindow | null, sto
   ipcMain.handle(IPC_CHANNELS.SPAWN_TERMINAL, (event, { id, cwd, workspaceId }) => {
     log.info('Spawning terminal', { id, cwd, workspaceId });
 
+    // Validate working directory
+    const validation = validateWorkingDirectory(cwd || process.cwd());
+    if (!validation.valid) {
+      log.error('Working directory validation failed', { id, cwd, error: validation.error });
+      
+      // Send error event to renderer
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send(IPC_CHANNELS.TERMINAL_ERROR, { 
+          id, 
+          error: validation.error,
+          type: 'spawn_failed'
+        });
+      }
+      
+      return { success: false, error: validation.error };
+    }
+
     const actualCwd = cwd || process.cwd();
     const shell = process.platform === 'win32' ? 'powershell.exe' : 'bash';
     const args = process.platform === 'win32' ? ['-NoLogo', '-NoExit'] : [];
@@ -280,6 +337,23 @@ export function initializeTerminalHandlers(mainWindow: BrowserWindow | null, sto
   // Spawn terminal with agent
   ipcMain.handle(IPC_CHANNELS.SPAWN_TERMINAL_WITH_AGENT, async (event, { id, cwd, agentConfig, workspaceId }) => {
     log.info('Spawning terminal with agent', { id, cwd, agentConfig: agentConfig?.type, workspaceId });
+
+    // Validate working directory
+    const validation = validateWorkingDirectory(cwd || process.cwd());
+    if (!validation.valid) {
+      log.error('Working directory validation failed', { id, cwd, error: validation.error });
+      
+      // Send error event to renderer
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send(IPC_CHANNELS.TERMINAL_ERROR, { 
+          id, 
+          error: validation.error,
+          type: 'spawn_failed'
+        });
+      }
+      
+      return { success: false, error: validation.error };
+    }
 
     // Auto-patch Claude Code if enabled and version mismatch detected
     if (agentConfig?.type === 'claude-code' && agentConfig?.enabled !== false) {

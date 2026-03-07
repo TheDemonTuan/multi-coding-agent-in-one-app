@@ -77,8 +77,8 @@ export interface ElectronAPI {
   getWorkspaces: () => Promise<any[]>;
   
   // Terminal management
-  spawnTerminal: (id: string, cwd: string, workspaceId?: string) => Promise<{ success: boolean; pid?: number }>;
-  spawnTerminalWithAgent: (id: string, cwd: string, agentConfig: AgentConfig, workspaceId?: string) => Promise<{ success: boolean; pid?: number }>;
+  spawnTerminal: (id: string, cwd: string, workspaceId?: string) => Promise<{ success: boolean; pid?: number; error?: string }>;
+  spawnTerminalWithAgent: (id: string, cwd: string, agentConfig: AgentConfig, workspaceId?: string) => Promise<{ success: boolean; pid?: number; error?: string }>;
   terminalWrite: (id: string, data: string) => Promise<{ success: boolean; error?: string }>;
   terminalKill: (id: string) => Promise<{ success: boolean; error?: string }>;
   terminalResize: (id: string, cols: number, rows: number) => Promise<{ success: boolean }>;

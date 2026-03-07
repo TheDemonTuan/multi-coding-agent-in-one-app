@@ -134,6 +134,7 @@ export const TerminalCell: React.FC<TerminalCellProps> = ({
   }>({ visible: false, x: 0, y: 0 });
   
   const [vnPatched, setVnPatched] = useState(false);
+  const [spawnError, setSpawnError] = useState<string | null>(null);
 
   // Check Vietnamese IME patch status for Claude Code terminals
   React.useEffect(() => {
@@ -511,8 +512,12 @@ export const TerminalCell: React.FC<TerminalCellProps> = ({
 
     listenersRef.current.unsubscribeError = (window as any).electronAPI.onTerminalError(({ id, error }: { id: string; error: string }) => {
       if (id === terminal.id) {
-        terminalRef.current?.write(`\r\n\x1b[31mError: ${error}\x1b[0m\r\n`);
+        terminalRef.current?.write(`\r\n\x1b[31m❌ Error: ${error}\x1b[0m\r\n`);
         updateTerminalStatus(terminal.id, 'error');
+        setSpawnError(error);
+        
+        // Auto-hide error toast after 10 seconds
+        setTimeout(() => setSpawnError(null), 10000);
       }
     });
 
@@ -532,11 +537,20 @@ export const TerminalCell: React.FC<TerminalCellProps> = ({
         if (result?.pid) {
           setTerminalProcessId(terminal.id, result.pid);
           console.log(`[TerminalCell ${terminal.id}] Spawned process with PID: ${result.pid}`);
+        } else if (result?.success === false && result?.error) {
+          // Handle validation errors from main process
+          setSpawnError(result.error);
+          updateTerminalStatus(terminal.id, 'error');
+          term.write(`\r\n\x1b[31m❌ ${result.error}\x1b[0m\r\n`);
+          setTimeout(() => setSpawnError(null), 10000);
         }
       })
       .catch((err: any) => {
         updateTerminalStatus(terminal.id, 'error');
-        term.write(`\r\n\x1b[31mFailed to start terminal: ${err}\x1b[0m\r\n`);
+        const errorMsg = err?.message || String(err);
+        setSpawnError(errorMsg);
+        term.write(`\r\n\x1b[31m❌ Failed to start terminal: ${errorMsg}\x1b[0m\r\n`);
+        setTimeout(() => setSpawnError(null), 10000);
       });
 
     return () => {
@@ -806,6 +820,50 @@ export const TerminalCell: React.FC<TerminalCellProps> = ({
           onClose={() => setContextMenu({ ...contextMenu, visible: false })}
           onAction={handleContextAction}
         />
+      )}
+
+      {/* Spawn Error Toast Notification */}
+      {spawnError && (
+        <div
+          style={{
+            position: 'absolute',
+            top: '16px',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            backgroundColor: '#f38ba8',
+            color: '#1e1e2e',
+            padding: '12px 20px',
+            borderRadius: '8px',
+            fontSize: '13px',
+            fontWeight: 600,
+            boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)',
+            zIndex: 1000,
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            maxWidth: '90%',
+            textAlign: 'center',
+          }}
+        >
+          <span>⚠️</span>
+          <span>{spawnError}</span>
+          <button
+            onClick={() => setSpawnError(null)}
+            style={{
+              background: 'none',
+              border: 'none',
+              color: '#1e1e2e',
+              fontSize: '18px',
+              cursor: 'pointer',
+              padding: '0 4px',
+              marginLeft: '8px',
+              opacity: 0.7,
+            }}
+            title="Close"
+          >
+            ×
+          </button>
+        </div>
       )}
     </div>
   );
