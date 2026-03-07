@@ -173,7 +173,7 @@ function insertCode(content: string, index: number, code: string): string {
 /**
  * Extract Claude Code version from file content
  */
-function extractClaudeVersion(content: string): string | null {
+export function extractClaudeVersion(content: string): string | null {
   // Look for version patterns
   const versionPatterns = [
     /["']version["']\s*:\s*["']([\d.]+)["']/,

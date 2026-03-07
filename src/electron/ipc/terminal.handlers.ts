@@ -8,7 +8,7 @@ import Store from 'electron-store';
 import * as pty from 'node-pty';
 import { IPC_CHANNELS, DEFAULT_TERMINAL_COLS, DEFAULT_TERMINAL_ROWS, STORAGE_KEYS } from '../../config/constants';
 import { logger } from '../../lib/logger';
-import { applyVietnameseImePatch, isVietnameseImePatched } from '../../utils/vietnameseImePatch';
+import { applyVietnameseImePatch, isVietnameseImePatched, extractClaudeVersion } from '../../utils/vietnameseImePatch';
 
 const log = logger.child('[IPC:Terminal]');
 
@@ -173,6 +173,17 @@ export function initializeTerminalHandlers(mainWindow: BrowserWindow | null, sto
             const result = await applyVietnameseImePatch();
             if (result.success) {
               log.info('Auto-patch successful!');
+              // Store the patched version in electron-store
+              if (result.version) {
+                const updatedSettings = { 
+                  ...vnSettings, 
+                  patchedVersion: result.version,
+                  lastPatchStatus: 'success' as const,
+                  lastPatchPath: result.patchedPath 
+                };
+                store.set(STORAGE_KEYS.VIETNAMESE_IME, updatedSettings);
+                log.info('Stored patched version in electron-store:', result.version);
+              }
               if (mainWindow && !mainWindow.isDestroyed()) {
                 mainWindow.webContents.send(IPC_CHANNELS.VIETNAMESE_IME_PATCH_APPLIED, result);
               }

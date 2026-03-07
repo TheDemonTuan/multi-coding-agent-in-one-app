@@ -13,6 +13,7 @@ import {
   findClaudePath,
   restoreFromBackup,
   validatePatch,
+  extractClaudeVersion,
 } from '../../utils/vietnameseImePatch';
 
 const log = logger.child('[IPC:VietnameseIME]');
@@ -25,16 +26,19 @@ export function initializeVietnameseIMEHandlers(mainWindow: BrowserWindow | null
       const result = await applyVietnameseImePatch();
       log.info('Patch result', { success: result.success });
       
-      // Update store with patch status
+      // Update store with patch status and version
       if (result.success) {
         const currentSettings = store.get(STORAGE_KEYS.VIETNAMESE_IME, {}) as any;
-        store.set(STORAGE_KEYS.VIETNAMESE_IME, {
+        const updatedSettings = {
           ...currentSettings,
           enabled: true,
           autoPatch: currentSettings.autoPatch ?? true,
           lastPatchStatus: 'success' as const,
           lastPatchPath: result.patchedPath,
-        });
+          patchedVersion: result.version,
+        };
+        store.set(STORAGE_KEYS.VIETNAMESE_IME, updatedSettings);
+        log.info('Stored patched version in electron-store:', result.version);
       } else {
         const currentSettings = store.get(STORAGE_KEYS.VIETNAMESE_IME, {}) as any;
         store.set(STORAGE_KEYS.VIETNAMESE_IME, {
@@ -68,15 +72,12 @@ export function initializeVietnameseIMEHandlers(mainWindow: BrowserWindow | null
       else if (claudePath.endsWith('.exe') || claudePath.endsWith('.cmd')) installedVia = 'binary';
     }
     
-    // Extract version
+    // Extract version using utility function
     let version: string | null = null;
     if (claudePath && fs.existsSync(claudePath)) {
       try {
         const content = fs.readFileSync(claudePath, 'latin1');
-        const versionMatch = content.match(/["']version["']\s*:\s*["']([\d.]+)["']/);
-        if (versionMatch && versionMatch[1]) {
-          version = versionMatch[1];
-        }
+        version = extractClaudeVersion(content);
       } catch {}
     }
     

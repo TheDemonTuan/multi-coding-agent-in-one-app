@@ -14,6 +14,7 @@ export interface VietnameseImeSettings {
   autoPatch: boolean;
   lastPatchStatus?: 'success' | 'failed' | 'pending';
   lastPatchPath?: string;
+  patchedVersion?: string;
 }
 
 const DEFAULT_SETTINGS: TerminalSettings = {
