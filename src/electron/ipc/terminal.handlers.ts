@@ -8,7 +8,13 @@ import Store from 'electron-store';
 import * as pty from 'node-pty';
 import { IPC_CHANNELS, DEFAULT_TERMINAL_COLS, DEFAULT_TERMINAL_ROWS, STORAGE_KEYS } from '../../config/constants';
 import { logger } from '../../lib/logger';
-import { applyVietnameseImePatch, isVietnameseImePatched, extractClaudeVersion } from '../../utils/vietnameseImePatch';
+import { 
+  applyVietnameseImePatch, 
+  isVietnameseImePatched, 
+  extractClaudeVersion,
+  getCurrentClaudeVersion,
+  isVersionMismatched 
+} from '../../utils/vietnameseImePatch';
 
 const log = logger.child('[IPC:Terminal]');
 
@@ -22,6 +28,88 @@ const terminalProcesses = new Map<string, {
 
 // Track workspace -> terminals mapping
 const terminalWorkspaceMap = new Map<string, string>();
+
+// Prevent concurrent patch operations
+let isPatching = false;
+
+/**
+ * Check if auto-patch is needed and apply it
+ * Returns true if patch was applied, false otherwise
+ */
+async function autoPatchIfNeeded(store: Store, mainWindow: BrowserWindow | null): Promise<boolean> {
+  if (isPatching) {
+    log.debug('Patch already running, skipping');
+    return false;
+  }
+
+  isPatching = true;
+  try {
+    const vnSettings = store.get(STORAGE_KEYS.VIETNAMESE_IME, { enabled: false, autoPatch: true }) as any;
+    
+    // Skip if Vietnamese IME or auto-patch is disabled
+    if (!vnSettings.enabled || !vnSettings.autoPatch) {
+      log.debug('Vietnamese IME or auto-patch disabled, skipping version check');
+      return false;
+    }
+
+    // Get current Claude Code version
+    const currentVersion = getCurrentClaudeVersion();
+    const patchedVersion = vnSettings.patchedVersion;
+    
+    log.debug(`Version check: current=${currentVersion}, patched=${patchedVersion}`);
+    
+    // Check if version mismatch exists
+    if (!isVersionMismatched(currentVersion, patchedVersion)) {
+      log.debug('No version mismatch detected');
+      return false;
+    }
+
+    // Version mismatch detected - auto-repatch
+    log.info('Version mismatch detected, auto-repatching Claude Code...');
+    log.info(`Current version: ${currentVersion}, Patched version: ${patchedVersion}`);
+    
+    try {
+      const result = await applyVietnameseImePatch();
+      
+      if (result.success) {
+        log.info('Auto-repatch successful!');
+        
+        // Update patchedVersion in store
+        if (result.version) {
+          const updatedSettings = { 
+            ...vnSettings, 
+            patchedVersion: result.version,
+            lastPatchStatus: 'success' as const,
+            lastPatchPath: result.patchedPath 
+          };
+          store.set(STORAGE_KEYS.VIETNAMESE_IME, updatedSettings);
+          log.info('Updated patchedVersion in store:', result.version);
+        }
+        
+        // Notify renderer
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send(IPC_CHANNELS.VIETNAMESE_IME_PATCH_APPLIED, result);
+        }
+        
+        return true;
+      } else {
+        log.warn('Auto-repatch failed:', result.message);
+        return false;
+      }
+    } catch (err: any) {
+      log.error('Auto-repatch error:', err.message);
+      
+      // Handle file locked errors gracefully
+      if (err.code === 'EBUSY') {
+        log.warn('Claude Code file is locked (may be updating in background), skipping auto-patch');
+      }
+      
+      return false;
+    }
+  } finally {
+    isPatching = false;
+  }
+}
 
 export function getTerminalProcesses() {
   return terminalProcesses;
@@ -160,43 +248,9 @@ export function initializeTerminalHandlers(mainWindow: BrowserWindow | null, sto
   ipcMain.handle(IPC_CHANNELS.SPAWN_TERMINAL_WITH_AGENT, async (event, { id, cwd, agentConfig, workspaceId }) => {
     log.info('Spawning terminal with agent', { id, cwd, agentConfig: agentConfig?.type, workspaceId });
 
-    // Auto-patch Claude Code if enabled and not already patched
+    // Auto-patch Claude Code if enabled and version mismatch detected
     if (agentConfig?.type === 'claude-code' && agentConfig?.enabled !== false) {
-      const vnSettings = store.get(STORAGE_KEYS.VIETNAMESE_IME, { enabled: false, autoPatch: true }) as any;
-      
-      if (vnSettings.enabled && vnSettings.autoPatch) {
-        const isPatched = isVietnameseImePatched();
-        
-        if (!isPatched) {
-          log.info('Auto-patching Claude Code before spawning terminal...');
-          try {
-            const result = await applyVietnameseImePatch();
-            if (result.success) {
-              log.info('Auto-patch successful!');
-              // Store the patched version in electron-store
-              if (result.version) {
-                const updatedSettings = { 
-                  ...vnSettings, 
-                  patchedVersion: result.version,
-                  lastPatchStatus: 'success' as const,
-                  lastPatchPath: result.patchedPath 
-                };
-                store.set(STORAGE_KEYS.VIETNAMESE_IME, updatedSettings);
-                log.info('Stored patched version in electron-store:', result.version);
-              }
-              if (mainWindow && !mainWindow.isDestroyed()) {
-                mainWindow.webContents.send(IPC_CHANNELS.VIETNAMESE_IME_PATCH_APPLIED, result);
-              }
-            } else {
-              log.warn('Auto-patch failed:', result.message);
-            }
-          } catch (err: any) {
-            log.error('Auto-patch error:', err.message);
-          }
-        } else {
-          log.info('Claude Code already patched, skipping auto-patch');
-        }
-      }
+      await autoPatchIfNeeded(store, mainWindow);
     }
 
     const shell = process.platform === 'win32' ? 'powershell.exe' : 'bash';
