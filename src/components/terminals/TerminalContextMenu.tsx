@@ -147,10 +147,29 @@ export const TerminalContextMenu: React.FC<TerminalContextMenuProps> = ({
       clearTimeout(submenuTimeoutRef.current);
     }
     const rect = element.getBoundingClientRect();
-    setSubmenuPosition({
-      x: rect.right,
-      y: rect.top,
-    });
+    const submenuWidth = 220;
+    
+    // Calculate position relative to viewport with boundary checks
+    let newX = rect.right + 4; // Small gap from parent
+    let newY = rect.top;
+    
+    // Check if submenu would go off right edge - position to left instead
+    if (rect.right + submenuWidth > window.innerWidth - 8) {
+      newX = rect.left - submenuWidth - 4;
+    }
+    
+    // Ensure submenu doesn't go off bottom
+    const submenuMaxHeight = 400;
+    if (rect.top + submenuMaxHeight > window.innerHeight - 8) {
+      newY = window.innerHeight - submenuMaxHeight - 8;
+    }
+    
+    // Ensure submenu doesn't go off top
+    if (newY < 8) {
+      newY = 8;
+    }
+    
+    setSubmenuPosition({ x: newX, y: newY });
     setActiveSubmenu(actionId);
     setHoveredIndex(index);
   };
@@ -159,7 +178,7 @@ export const TerminalContextMenu: React.FC<TerminalContextMenuProps> = ({
     submenuTimeoutRef.current = setTimeout(() => {
       setActiveSubmenu(null);
       setHoveredIndex(null);
-    }, 150);
+    }, 300);
   };
 
   const cancelHideSubmenu = () => {
@@ -186,27 +205,7 @@ export const TerminalContextMenu: React.FC<TerminalContextMenuProps> = ({
     positionedY = window.innerHeight - menuHeight - 8;
   }
 
-  // Adjust submenu position if it would go off-screen
-  const adjustSubmenuPosition = (baseX: number, baseY: number, submenuWidth: number) => {
-    let adjustedX = baseX;
-    let adjustedY = baseY;
 
-    // Check if submenu would go off right edge
-    if (baseX + submenuWidth > window.innerWidth - 8) {
-      adjustedX = baseX - submenuWidth - 8;
-    }
-    // Check if submenu would go off bottom edge
-    const submenuHeight = 350; // Approximate max height
-    if (baseY + submenuHeight > window.innerHeight - 8) {
-      adjustedY = window.innerHeight - submenuHeight - 8;
-    }
-    // Check if submenu would go off top edge
-    if (baseY < 8) {
-      adjustedY = 8;
-    }
-
-    return { x: adjustedX, y: adjustedY };
-  };
 
   return (
     <div
@@ -228,15 +227,29 @@ export const TerminalContextMenu: React.FC<TerminalContextMenuProps> = ({
         return (
           <div key={action.id} style={{ position: 'relative' }}>
             <button
-              onClick={() => {
-                if (!hasSubmenu) {
+              onClick={(e) => {
+                e.stopPropagation();
+                if (hasSubmenu) {
+                  // Toggle submenu on click
+                  const element = submenuTriggerRefs.current[index];
+                  if (element && activeSubmenu === action.id) {
+                    setActiveSubmenu(null);
+                    setHoveredIndex(null);
+                  } else if (element) {
+                    cancelHideSubmenu();
+                    showSubmenu(action.id, index, element);
+                  }
+                } else {
                   handleActionClick(action.id);
                 }
               }}
               onMouseEnter={() => {
                 if (hasSubmenu) {
                   const element = submenuTriggerRefs.current[index];
-                  if (element) showSubmenu(action.id, index, element);
+                  if (element) {
+                    cancelHideSubmenu();
+                    showSubmenu(action.id, index, element);
+                  }
                 } else if (!(action as ContextMenuAction).disabled) {
                   setHoveredIndex(index);
                 }
@@ -257,7 +270,12 @@ export const TerminalContextMenu: React.FC<TerminalContextMenuProps> = ({
               {(action as ContextMenuAction).shortcut && (
                 <span style={styles.shortcut}>{(action as ContextMenuAction).shortcut}</span>
               )}
-              {hasSubmenu && <span style={styles.submenuArrow}>▶</span>}
+              {hasSubmenu && (
+                <span style={{
+                  ...styles.submenuArrow,
+                  ...(isSubmenuOpen ? styles.activeSubmenuArrow : {}),
+                }}>▶</span>
+              )}
             </button>
             {hasSubmenu && isSubmenuOpen && (
               <div
@@ -265,8 +283,8 @@ export const TerminalContextMenu: React.FC<TerminalContextMenuProps> = ({
                 onMouseLeave={hideSubmenu}
                 style={{
                   ...styles.submenu,
-                  left: adjustSubmenuPosition(submenuPosition.x, submenuPosition.y, 220).x,
-                  top: adjustSubmenuPosition(submenuPosition.x, submenuPosition.y, 220).y,
+                  left: submenuPosition.x,
+                  top: submenuPosition.y,
                 }}
               >
                 {action.submenu.map((subAction, subIndex) => {
@@ -350,6 +368,9 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: '10px',
     color: '#6c7086',
     marginLeft: 'auto',
+  },
+  activeSubmenuArrow: {
+    color: '#89b4fa',
   },
   submenu: {
     position: 'fixed',
