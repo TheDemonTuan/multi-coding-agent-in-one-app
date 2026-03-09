@@ -75,7 +75,7 @@ const terminalWorkspaceMap = new Map<string, string>();
 // Batch terminal data to reduce IPC call frequency
 const dataBatchTimers = new Map<string, NodeJS.Timeout>();
 const dataBuffers = new Map<string, { data: string; timestamp: number }[]>();
-const BATCH_INTERVAL = 8; // ms - balance between latency and throughput
+const BATCH_INTERVAL = 16; // ms - 1 frame @ 60fps: balances latency vs IPC call frequency (~50% fewer calls vs 8ms)
 
 /**
  * Batch terminal data and send via IPC at intervals
@@ -381,13 +381,13 @@ export function initializeTerminalHandlers(mainWindow: BrowserWindow | null, sto
   });
 
   // Write to terminal
-  ipcMain.handle(IPC_CHANNELS.TERMINAL_WRITE, (event, { id, data }) => {
+  // Uses ipcMain.on (fire-and-forget) instead of ipcMain.handle (round-trip) to eliminate
+  // await overhead for every keystroke. The renderer uses ipcRenderer.send().
+  ipcMain.on(IPC_CHANNELS.TERMINAL_WRITE, (event, { id, data }) => {
     const term = terminalProcesses.get(id);
     if (term) {
       term.ptyProcess.write(data);
-      return { success: true };
     }
-    return { success: false, error: 'Terminal not found' };
   });
 
   // Kill terminal

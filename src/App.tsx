@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useCallback, useState } from 'react';
 import { TitleBar, TerminalGrid, WorkspaceTabBar, WorkspaceSwitcherModal, SettingsModal, WorkspaceCreationModal } from './components';
 import { useWorkspaceStore } from './stores';
 import { getAppVersion } from './utils/version';
@@ -10,21 +10,20 @@ function App() {
     nextWorkspace,
     previousWorkspace,
     switchToWorkspaceByIndex,
-    getCurrentWorkspaceIndex,
   } = useWorkspaceNavigation();
 
+  // Individual selectors to avoid re-rendering when unrelated state changes
   const theme = useWorkspaceStore((state) => state.theme);
   const workspace = useWorkspaceStore((state) => state.currentWorkspace);
+  const workspaces = useWorkspaceStore((state) => state.workspaces);
+  // Actions are stable references in Zustand - selector is still preferred for clarity
   const loadWorkspaces = useWorkspaceStore((state) => state.loadWorkspaces);
   const setWorkspaceModalOpen = useWorkspaceStore((state) => state.setWorkspaceModalOpen);
-  const editingWorkspace = useWorkspaceStore((state) => state.editingWorkspace);
   const setCurrentWorkspace = useWorkspaceStore((state) => state.setCurrentWorkspace);
   const setActiveTerminal = useWorkspaceStore((state) => state.setActiveTerminal);
   const getNextTerminal = useWorkspaceStore((state) => state.getNextTerminal);
   const getPreviousTerminal = useWorkspaceStore((state) => state.getPreviousTerminal);
   const getTerminalByIndex = useWorkspaceStore((state) => state.getTerminalByIndex);
-  const workspaces = useWorkspaceStore((state) => state.workspaces);
-  const activeTerminalId = useWorkspaceStore((state) => state.activeTerminalId);
 
   // Workspace switcher modal state
   const [workspaceSwitcherOpen, setWorkspaceSwitcherOpen] = useState(false);
@@ -52,131 +51,121 @@ function App() {
   }, []);
 
   // Keyboard shortcuts
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      // Don't trigger shortcuts when typing in input fields
-      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
-        return;
-      }
+  // NOTE: handlers use useCallback to get stable references so the effect
+  // deps list is minimal and doesn't re-register on every render.
+  const handleKeyDown = useCallback((e: KeyboardEvent) => {
+    // Don't trigger shortcuts when typing in input fields
+    if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
+      return;
+    }
 
-      // Ctrl+, (comma): Open Settings
-      if (e.ctrlKey && e.key === ',') {
-        e.preventDefault();
-        setSettingsModalOpen(true);
-        return;
-      }
+    // Ctrl+, (comma): Open Settings
+    if (e.ctrlKey && e.key === ',') {
+      e.preventDefault();
+      setSettingsModalOpen(true);
+      return;
+    }
 
-      // Ctrl+Shift+N: New workspace
-      if (e.ctrlKey && e.shiftKey && e.key === 'N') {
-        e.preventDefault();
-        setWorkspaceModalOpen(true);
-        return;
-      }
+    // Ctrl+Shift+N: New workspace
+    if (e.ctrlKey && e.shiftKey && e.key === 'N') {
+      e.preventDefault();
+      setWorkspaceModalOpen(true);
+      return;
+    }
 
-      // Ctrl+Tab: Cycle to next workspace with modal preview
-      if (e.ctrlKey && e.key === 'Tab') {
-        e.preventDefault();
+    // Ctrl+Tab: Cycle to next workspace with modal preview
+    if (e.ctrlKey && e.key === 'Tab') {
+      e.preventDefault();
+      nextWorkspace();
+      setWorkspaceSwitcherOpen(true);
+      return;
+    }
 
-        // Always cycle to next workspace when Ctrl+Tab is pressed
-        const nextWs = nextWorkspace();
+    // Ctrl+Shift+Tab: Previous workspace
+    if (e.ctrlKey && e.shiftKey && e.key === 'Tab') {
+      e.preventDefault();
+      previousWorkspace();
+      setWorkspaceSwitcherOpen(true);
+      return;
+    }
 
-        // Open modal to show preview
-        setWorkspaceSwitcherOpen(true);
-        return;
-      }
+    // Ctrl+PageUp: Previous workspace
+    if (e.ctrlKey && e.key === 'PageUp') {
+      e.preventDefault();
+      previousWorkspace();
+      return;
+    }
 
-      // Ctrl+Shift+Tab: Previous workspace
-      if (e.ctrlKey && e.shiftKey && e.key === 'Tab') {
-        e.preventDefault();
-        const prevWorkspace = previousWorkspace();
-        setWorkspaceSwitcherOpen(true);
-        return;
-      }
+    // Ctrl+PageDown: Next workspace
+    if (e.ctrlKey && e.key === 'PageDown') {
+      e.preventDefault();
+      nextWorkspace();
+      return;
+    }
 
-      // Ctrl+PageUp: Previous workspace
-      if (e.ctrlKey && e.key === 'PageUp') {
-        e.preventDefault();
-        const prevWorkspace = previousWorkspace();
-        return;
-      }
+    // Ctrl+T: Next terminal (or terminal at index with number)
+    if (e.ctrlKey && e.key === 't') {
+      e.preventDefault();
 
-      // Ctrl+PageDown: Next workspace
-      if (e.ctrlKey && e.key === 'PageDown') {
-        e.preventDefault();
-        const nextWorkspaceResult = nextWorkspace();
-        return;
-      }
-
-      // Ctrl+T: Next terminal (or terminal at index with number)
-      if (e.ctrlKey && e.key === 't') {
-        e.preventDefault();
-
-        // Check if a number key is pressed (Ctrl+1 through Ctrl+9)
-        const numKey = e.code.match(/Digit(\d)/);
-        if (numKey) {
-          const index = parseInt(numKey[1]) - 1;
-          const terminal = getTerminalByIndex(index);
-          if (terminal) {
-            setActiveTerminal(terminal.id);
-          }
-        } else {
-          const nextTerminal = getNextTerminal();
-          if (nextTerminal) {
-            setActiveTerminal(nextTerminal.id);
-          }
+      // Check if a number key is pressed (Ctrl+1 through Ctrl+9)
+      const numKey = e.code.match(/Digit(\d)/);
+      if (numKey) {
+        const index = parseInt(numKey[1]) - 1;
+        const terminal = getTerminalByIndex(index);
+        if (terminal) {
+          setActiveTerminal(terminal.id);
         }
-        return;
-      }
-
-      // Ctrl+Shift+T: Previous terminal
-      if (e.ctrlKey && e.shiftKey && e.key === 'T') {
-        e.preventDefault();
-        const prevTerminal = getPreviousTerminal();
-        if (prevTerminal) {
-          setActiveTerminal(prevTerminal.id);
-        }
-        return;
-      }
-
-      // Alt+1 through Alt+9: Switch to workspace by index
-      if (e.altKey && e.key.match(/^[1-9]$/)) {
-        e.preventDefault();
-        const index = parseInt(e.key) - 1;
-        switchToWorkspaceByIndex(index);
-        return;
-      }
-    };
-
-    const handleKeyUp = (e: KeyboardEvent) => {
-      if (e.key === 'Control') {
-        // Close workspace switcher when Ctrl is released
-        if (workspaceSwitcherOpen) {
-          setWorkspaceSwitcherOpen(false);
+      } else {
+        const nextTerminal = getNextTerminal();
+        if (nextTerminal) {
+          setActiveTerminal(nextTerminal.id);
         }
       }
-    };
+      return;
+    }
 
-    window.addEventListener('keydown', handleKeyDown);
-    window.addEventListener('keyup', handleKeyUp);
-    return () => {
-      window.removeEventListener('keydown', handleKeyDown);
-      window.removeEventListener('keyup', handleKeyUp);
-    };
+    // Ctrl+Shift+T: Previous terminal
+    if (e.ctrlKey && e.shiftKey && e.key === 'T') {
+      e.preventDefault();
+      const prevTerminal = getPreviousTerminal();
+      if (prevTerminal) {
+        setActiveTerminal(prevTerminal.id);
+      }
+      return;
+    }
+
+    // Alt+1 through Alt+9: Switch to workspace by index
+    if (e.altKey && e.key.match(/^[1-9]$/)) {
+      e.preventDefault();
+      const index = parseInt(e.key) - 1;
+      switchToWorkspaceByIndex(index);
+      return;
+    }
   }, [
-    workspaceSwitcherOpen,
     nextWorkspace,
     previousWorkspace,
     switchToWorkspaceByIndex,
     getNextTerminal,
     getPreviousTerminal,
     getTerminalByIndex,
-    setCurrentWorkspace,
     setActiveTerminal,
     setWorkspaceModalOpen,
-    setSettingsModalOpen,
-    workspaces,
-    workspace
   ]);
+
+  const handleKeyUp = useCallback((e: KeyboardEvent) => {
+    if (e.key === 'Control') {
+      setWorkspaceSwitcherOpen(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+    };
+  }, [handleKeyDown, handleKeyUp]);
 
   const handleSelectWorkspace = (workspaceId: string) => {
     const ws = workspaces.find(w => w.id === workspaceId);

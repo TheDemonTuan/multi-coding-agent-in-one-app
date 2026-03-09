@@ -81,6 +81,10 @@ export class CommandBlockTracker {
                         isFinished: false,
                     };
                     this.blocks.push(this.currentBlock);
+                    // Prune oldest blocks to prevent unbounded growth (max 500 entries)
+                    if (this.blocks.length > 500) {
+                        this.blocks.splice(0, this.blocks.length - 500);
+                    }
                     break;
                 }
                 case 'B': {

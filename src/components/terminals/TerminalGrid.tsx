@@ -1,20 +1,48 @@
-import React, { useRef, useMemo } from 'react';
-import { Group, Panel, Separator } from 'react-resizable-panels';
+import React, { useRef, useCallback, useEffect } from 'react';
 import { useWorkspaceStore } from '../../stores/workspaceStore';
 import { TerminalCell } from './TerminalCell';
 import { WorkspaceLayout } from '../../types/workspace';
 
 export const TerminalGrid = React.memo(() => {
-  const { workspaces, currentWorkspace, activeTerminalId, setActiveTerminal, removeTerminal, splitTerminal } = useWorkspaceStore();
-  
+  // Individual selectors to prevent re-rendering when unrelated state changes
+  const workspaces = useWorkspaceStore((s) => s.workspaces);
+  const currentWorkspace = useWorkspaceStore((s) => s.currentWorkspace);
+  const activeTerminalId = useWorkspaceStore((s) => s.activeTerminalId);
+  const setActiveTerminal = useWorkspaceStore((s) => s.setActiveTerminal);
+  const removeTerminal = useWorkspaceStore((s) => s.removeTerminal);
+  const splitTerminal = useWorkspaceStore((s) => s.splitTerminal);
+
+  // Memoize callbacks to prevent TerminalCell React.memo from breaking
+  const handleSetActiveTerminal = useCallback((id: string) => {
+    setActiveTerminal(id);
+  }, [setActiveTerminal]);
+
+  const handleRemoveTerminal = useCallback((terminalId: string) => {
+    removeTerminal(terminalId);
+  }, [removeTerminal]);
+
+  const handleSplitTerminal = useCallback((terminalId: string, direction: 'horizontal' | 'vertical') => {
+    splitTerminal(terminalId, direction);
+  }, [splitTerminal]);
+
   // Track which workspaces have been rendered (lazy rendering)
   // Once a workspace is rendered, it stays mounted to preserve terminal state
   const renderedWorkspaceIdsRef = useRef<Set<string>>(new Set());
-  
+
   // Mark current workspace as rendered if not already
   if (currentWorkspace && !renderedWorkspaceIdsRef.current.has(currentWorkspace.id)) {
     renderedWorkspaceIdsRef.current.add(currentWorkspace.id);
   }
+
+  // Cleanup rendered workspace refs for deleted workspaces to prevent memory leaks
+  useEffect(() => {
+    const currentIds = new Set(workspaces.map(ws => ws.id));
+    renderedWorkspaceIdsRef.current.forEach(id => {
+      if (!currentIds.has(id)) {
+        renderedWorkspaceIdsRef.current.delete(id);
+      }
+    });
+  }, [workspaces]);
 
   if (!currentWorkspace) {
     return <div>No workspace selected</div>;
@@ -37,7 +65,13 @@ export const TerminalGrid = React.memo(() => {
                   display: isActive ? 'block' : 'none',
                 }}
               >
-                {renderWorkspace(workspace, activeTerminalId, setActiveTerminal, removeTerminal, splitTerminal)}
+                {renderWorkspace(
+                  workspace,
+                  activeTerminalId,
+                  handleSetActiveTerminal,
+                  handleRemoveTerminal,
+                  handleSplitTerminal,
+                )}
               </div>
             );
           })}
@@ -54,28 +88,15 @@ const renderWorkspace = (
   activeTerminalId: string | null,
   setActiveTerminal: (id: string) => void,
   removeTerminal: (terminalId: string) => void,
-  splitTerminal: (terminalId: string, direction: 'horizontal' | 'vertical') => void
+  splitTerminal: (terminalId: string, direction: 'horizontal' | 'vertical') => void,
 ) => {
   const { columns, rows, terminals } = workspace;
 
-  // Single terminal
-  if (columns === 1 && rows === 1) {
-    const terminal = terminals[0];
-    return (
-      <div style={styles.simpleContainer}>
-        <TerminalCell
-          terminal={terminal}
-          isActive={terminal.id === activeTerminalId}
-          onActivate={() => setActiveTerminal(terminal.id)}
-          onSplit={(direction) => splitTerminal(terminal.id, direction)}
-          onClose={() => removeTerminal(terminal.id)}
-        />
-      </div>
-    );
-  }
+  // Always use CSS grid for all layouts to maintain stable React component keys
+  // This prevents terminal unmount/remount when splitting (which would restart terminals)
+  const useGrid = columns > 1 || rows > 1;
 
-  // Multiple rows and columns - use CSS grid instead of nested Groups
-  if (columns > 1 && rows > 1) {
+  if (useGrid) {
     return (
       <div style={{
         display: 'grid',
@@ -85,8 +106,16 @@ const renderWorkspace = (
         width: '100%',
         gap: '2px',
       }}>
-        {terminals.map((terminal: any, index: number) => (
-          <div key={terminal.id} style={{ ...styles.simpleContainer, border: '1px solid #45475a40', borderRadius: '4px' }}>
+        {terminals.map((terminal: any) => (
+          <div
+            key={terminal.id}
+            style={{
+              ...styles.simpleContainer,
+              border: '1px solid #45475a40',
+              borderRadius: '4px',
+              overflow: 'hidden',
+            }}
+          >
             <TerminalCell
               terminal={terminal}
               isActive={terminal.id === activeTerminalId}
@@ -100,59 +129,19 @@ const renderWorkspace = (
     );
   }
 
-  // Single row, multiple columns - horizontal layout
-  if (rows === 1 && columns > 1) {
-    return (
-      <Group orientation="horizontal" style={styles.groupContainer}>
-        {terminals.map((terminal: any, index: number) => (
-          <React.Fragment key={terminal.id}>
-            <Panel defaultSize={100 / columns} minSize={10}>
-              <div style={styles.simpleContainer}>
-                <TerminalCell
-                  terminal={terminal}
-                  isActive={terminal.id === activeTerminalId}
-                  onActivate={() => setActiveTerminal(terminal.id)}
-                  onSplit={(direction) => splitTerminal(terminal.id, direction)}
-                  onClose={() => removeTerminal(terminal.id)}
-                />
-              </div>
-            </Panel>
-            {index < terminals.length - 1 && (
-              <Separator />
-            )}
-          </React.Fragment>
-        ))}
-      </Group>
-    );
-  }
-
-  // Single column, multiple rows - vertical layout
-  if (columns === 1 && rows > 1) {
-    return (
-      <Group orientation="vertical" style={styles.groupContainer}>
-        {terminals.map((terminal: any, index: number) => (
-          <React.Fragment key={terminal.id}>
-            <Panel defaultSize={100 / rows} minSize={10}>
-              <div style={styles.simpleContainer}>
-                <TerminalCell
-                  terminal={terminal}
-                  isActive={terminal.id === activeTerminalId}
-                  onActivate={() => setActiveTerminal(terminal.id)}
-                  onSplit={(direction) => splitTerminal(terminal.id, direction)}
-                  onClose={() => removeTerminal(terminal.id)}
-                />
-              </div>
-            </Panel>
-            {index < terminals.length - 1 && (
-              <Separator />
-            )}
-          </React.Fragment>
-        ))}
-      </Group>
-    );
-  }
-
-  return null;
+  // Single terminal (1x1 grid)
+  const terminal = terminals[0];
+  return (
+    <div style={styles.simpleContainer}>
+      <TerminalCell
+        terminal={terminal}
+        isActive={terminal.id === activeTerminalId}
+        onActivate={() => setActiveTerminal(terminal.id)}
+        onSplit={(direction) => splitTerminal(terminal.id, direction)}
+        onClose={() => removeTerminal(terminal.id)}
+      />
+    </div>
+  );
 };
 
 const styles: Record<string, React.CSSProperties> = {

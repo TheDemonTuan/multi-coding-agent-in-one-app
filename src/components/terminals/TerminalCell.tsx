@@ -5,6 +5,7 @@ import { WebLinksAddon } from '@xterm/addon-web-links';
 import { SearchAddon } from '@xterm/addon-search';
 import { WebglAddon } from '@xterm/addon-webgl';
 import '@xterm/xterm/css/xterm.css';
+import './TerminalCell.css';
 import { TerminalPane, AgentType } from '../../types/workspace';
 import { useWorkspaceStore } from '../../stores/workspaceStore';
 import { TerminalContextMenu } from './TerminalContextMenu';
@@ -110,7 +111,13 @@ export const TerminalCell = React.memo<TerminalCellProps>(({
   const isInitialFitCompleteRef = useRef(false);
   const commandBlockTrackerRef = useRef<CommandBlockTracker | null>(null);
 
+  // Actions — stable references in Zustand, destructuring is fine here
   const { restartTerminal, getNextWorkspace, getPreviousWorkspace, setCurrentWorkspace, switchTerminalAgent } = useWorkspaceStore();
+  const { updateTerminalStatus, setTerminalProcessId, isTerminalRestarting } = useWorkspaceStore();
+
+  // Individual selectors for reactive state (subscribes to changes)
+  const theme = useWorkspaceStore((state: any) => state.theme);
+  const currentWorkspace = useWorkspaceStore((state: any) => state.currentWorkspace);
 
   const listenersRef = useRef<{
     unsubscribeData?: () => void;
@@ -129,8 +136,6 @@ export const TerminalCell = React.memo<TerminalCellProps>(({
   }>({});
 
   const [hasStarted, setHasStarted] = useState(false);
-  const theme = useWorkspaceStore((state: any) => state.theme);
-  const { updateTerminalStatus, setTerminalProcessId, currentWorkspace, isTerminalRestarting } = useWorkspaceStore();
 
   const [unreadCount, setUnreadCount] = useState(0);
   const isScrolledUp = unreadCount > 0;
@@ -411,6 +416,10 @@ export const TerminalCell = React.memo<TerminalCellProps>(({
       // Performance optimizations (VAL-PERF-008)
       drawBoldTextInBrightColors: true,
       minimumContrastRatio: 1, // Skip contrast recalculation for performance
+
+      // Smooth scrolling improvements
+      fastScrollSensitivity: 5,
+      smoothScrollDuration: 125,
     });
 
     const fitAddon = new FitAddon();
@@ -510,14 +519,18 @@ export const TerminalCell = React.memo<TerminalCellProps>(({
 
     listenersRef.current.unsubscribeData = (window as any).electronAPI.onTerminalData(({ id, data }: { id: string; data: string }) => {
       if (id === terminal.id && terminalRef.current) {
-        // Parse and strip OSC 133 shell integration sequences before rendering.
-        // This prevents garbage characters in terminals that emit these markers
-        // (PowerShell 7+, zsh with shell integration, fish).
-        const { cleaned, markers } = parseOSC133(data);
-        if (markers.length > 0) {
-          commandBlockTrackerRef.current?.processMarkers(markers);
+        // Fast-path: only invoke OSC 133 parser if escape sequence is present.
+        // The regex scan avoids garbage on every keystroke in terminals that
+        // don't emit shell-integration markers (the common case).
+        const hasOSC = data.includes('\x1b]133;');
+        let outputData = data;
+        if (hasOSC) {
+          const { cleaned, markers } = parseOSC133(data);
+          if (markers.length > 0) {
+            commandBlockTrackerRef.current?.processMarkers(markers);
+            outputData = cleaned;
+          }
         }
-        const outputData = markers.length > 0 ? cleaned : data;
 
         // Buffer data until initial fit is complete to prevent garbled output
         if (!isInitialFitCompleteRef.current) {
@@ -568,7 +581,7 @@ export const TerminalCell = React.memo<TerminalCellProps>(({
         updateTerminalStatus(terminal.id, 'stopped');
       }
     });
-    
+
 
     listenersRef.current.unsubscribeError = (window as any).electronAPI.onTerminalError(({ id, error }: { id: string; error: string }) => {
       if (id === terminal.id) {
@@ -586,7 +599,7 @@ export const TerminalCell = React.memo<TerminalCellProps>(({
     xtermDisposablesRef.current.onDataDisposable = term.onData((data: string) => {
       (window as any).electronAPI.terminalWrite(terminal.id, data);
     });
-    
+
 
     // Register custom key event handler (VAL-MEM-004)
     // attachCustomKeyEventHandler returns void, so we store a cleanup function
@@ -680,7 +693,7 @@ export const TerminalCell = React.memo<TerminalCellProps>(({
     xtermDisposablesRef.current.customKeyHandlerCleanup = () => {
       customKeyHandlerRegistered = false;
     };
-    
+
 
     // Spawn terminal process
     const workspaceId = currentWorkspace?.id;
@@ -693,7 +706,7 @@ export const TerminalCell = React.memo<TerminalCellProps>(({
       .then((result: any) => {
         if (result?.pid) {
           setTerminalProcessId(terminal.id, result.pid);
-          
+
         } else if (result?.success === false && result?.error) {
           // Handle validation errors from main process
           setSpawnError(result.error);
@@ -713,7 +726,7 @@ export const TerminalCell = React.memo<TerminalCellProps>(({
       });
 
     return () => {
-      
+
 
       // Clear all error toast timers to prevent memory leaks
       errorToastTimersRef.current.forEach(timer => clearTimeout(timer));
@@ -732,62 +745,62 @@ export const TerminalCell = React.memo<TerminalCellProps>(({
       }
 
       // Unsubscribe all IPC event listeners to prevent memory leaks (VAL-MEM-003)
-      
+
       if (listenersRef.current.unsubscribeData) {
-        
+
         listenersRef.current.unsubscribeData();
       }
       if (listenersRef.current.unsubscribeStarted) {
-        
+
         listenersRef.current.unsubscribeStarted();
       }
       if (listenersRef.current.unsubscribeExit) {
-        
+
         listenersRef.current.unsubscribeExit();
       }
       if (listenersRef.current.unsubscribeError) {
-        
+
         listenersRef.current.unsubscribeError();
       }
-      
+
       listenersRef.current = {};
-      
+
 
       // Kill PTY process in main process BEFORE disposing UI terminal
       // This ensures the process is terminated and won't send more data
       if (typeof window !== 'undefined' && (window as any).electronAPI) {
         // Synchronously fire-and-forget to avoid await delays during cleanup
         (window as any).electronAPI.terminalKill(terminal.id).catch((err: any) => {
-          
+
         });
       }
 
       // Dispose xterm.js event handlers (VAL-MEM-004)
       // Must be done BEFORE terminal.dispose() to properly detach all handlers
-      
+
 
       // Dispose onData handler
       if (xtermDisposablesRef.current.onDataDisposable) {
-        
+
         xtermDisposablesRef.current.onDataDisposable.dispose();
         xtermDisposablesRef.current.onDataDisposable = undefined;
       }
 
       // Dispose onScroll handler
       if (xtermDisposablesRef.current.onScrollDisposable) {
-        
+
         xtermDisposablesRef.current.onScrollDisposable.dispose();
         xtermDisposablesRef.current.onScrollDisposable = undefined;
       }
 
       // Cleanup custom key event handler
       if (xtermDisposablesRef.current.customKeyHandlerCleanup) {
-        
+
         xtermDisposablesRef.current.customKeyHandlerCleanup();
         xtermDisposablesRef.current.customKeyHandlerCleanup = undefined;
       }
 
-      
+
 
       // Dispose xterm.js terminal and all addons (VAL-MEM-004)
       // Dispose addons explicitly before terminal disposal for clarity
@@ -797,7 +810,7 @@ export const TerminalCell = React.memo<TerminalCellProps>(({
         try {
           webglAddonRef.current.dispose();
         } catch (err: any) {
-          
+
         }
         webglAddonRef.current = null;
       }
@@ -806,7 +819,7 @@ export const TerminalCell = React.memo<TerminalCellProps>(({
         try {
           fitAddonRef.current.dispose();
         } catch (err: any) {
-          
+
         }
         fitAddonRef.current = null;
       }
@@ -815,7 +828,7 @@ export const TerminalCell = React.memo<TerminalCellProps>(({
         try {
           webLinksAddonRef.current.dispose();
         } catch (err: any) {
-          
+
         }
         webLinksAddonRef.current = null;
       }
@@ -824,7 +837,7 @@ export const TerminalCell = React.memo<TerminalCellProps>(({
         try {
           searchAddonRef.current.dispose();
         } catch (err: any) {
-          
+
         }
         searchAddonRef.current = null;
       }
@@ -835,7 +848,7 @@ export const TerminalCell = React.memo<TerminalCellProps>(({
       // - Any remaining internal cleanup
       if (terminalRef.current) {
         try {
-          
+
           terminalRef.current.dispose();
         } catch (err: any) {
           console.error(`[TerminalCell ${terminal.id}] Error disposing terminal:`, err);
@@ -910,6 +923,7 @@ export const TerminalCell = React.memo<TerminalCellProps>(({
   return (
     <div
       className={`terminal-cell ${isActive ? 'active' : ''}`}
+      data-theme={theme}
       onClick={onActivate}
       onContextMenu={handleContextMenu}
       onDragOver={handleDragOver}
@@ -917,115 +931,32 @@ export const TerminalCell = React.memo<TerminalCellProps>(({
       onDrop={handleDrop}
       onKeyDown={handleContainerKeyDown}
       tabIndex={-1}
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        border: isActive ? '2px solid #89b4fa' : '2px solid #45475a60',
-        borderRadius: '4px',
-        overflow: 'hidden',
-        backgroundColor: theme === 'dark' ? '#1e1e2e' : '#ffffff',
-        position: 'relative',
-        outline: 'none',
-        height: '100%',
-        boxSizing: 'border-box',
-        boxShadow: isActive
-          ? '0 0 0 2px rgba(137, 180, 250, 0.3), 0 4px 12px rgba(137, 180, 250, 0.2)'
-          : 'none',
-        transition: 'border-color 0.15s ease, box-shadow 0.15s ease',
-      }}
     >
-      <div
-        className="terminal-header"
-        style={{
-          padding: '4px 8px',
-          backgroundColor: theme === 'dark' ? '#313244' : '#e0e0e0',
-          borderBottom: '1px solid #45475a40',
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          cursor: 'pointer',
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1 }}>
-          {agentIcon && <span style={{ fontSize: '14px' }}>{agentIcon}</span>}
-          <span style={{ fontSize: '12px', fontWeight: 600 }}>
-            {terminal.title}
-          </span>
+      <div className="terminal-header">
+        <div className="terminal-header-left">
+          {agentIcon && <span className="terminal-agent-icon">{agentIcon}</span>}
+          <span className="terminal-title">{terminal.title}</span>
           {terminal.agent?.type === 'claude-code' && vnPatched && (
-            <span style={{ fontSize: '10px', marginLeft: '4px' }} title="Vietnamese IME Patched">🇻🇳</span>
+            <span className="terminal-vn-flag" title="Vietnamese IME Patched">🇻🇳</span>
           )}
           {terminal.agent?.enabled && terminal.agent.type !== 'none' && (
-            <span style={{
-              fontSize: '10px',
-              padding: '2px 6px',
-              backgroundColor: '#45475a40',
-              color: '#a6adc8',
-              borderRadius: '4px',
-              fontWeight: 600,
-            }}>
-              {terminal.agent.type.toUpperCase()}
-            </span>
+            <span className="terminal-agent-badge">{terminal.agent.type.toUpperCase()}</span>
           )}
           {!isActive && (
-            <span
-              className="tab-to-focus-hint"
-              style={{
-                fontSize: '9px',
-                padding: '2px 4px',
-                backgroundColor: '#89b4fa40',
-                color: '#89b4fa',
-                borderRadius: '3px',
-                fontWeight: 600,
-                marginLeft: '4px',
-                opacity: 0,
-                transition: 'opacity 0.15s ease',
-              }}
-            >
-              Tab to focus
-            </span>
+            <span className="tab-to-focus-hint">Tab to focus</span>
           )}
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+        <div className="terminal-header-right">
           <div className="terminal-status">
             <span
-              style={{
-                display: 'inline-block',
-                width: '8px',
-                height: '8px',
-                borderRadius: '50%',
-                backgroundColor:
-                  terminal.status === 'running'
-                    ? '#a6e3a1'
-                    : terminal.status === 'error'
-                      ? '#f38ba8'
-                      : '#6c7086',
-                marginRight: '4px',
-              }}
+              className={`terminal-status-dot ${terminal.status}`}
             />
-            <span style={{ fontSize: '11px', color: '#6c7086' }}>
-              {terminal.status}
-            </span>
+            <span className="terminal-status-text">{terminal.status}</span>
           </div>
           {terminalsCount > 1 && (
             <button
-              className="close-button"
+              className="terminal-close-btn"
               onClick={handleCloseClick}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                width: '20px',
-                height: '20px',
-                padding: 0,
-                border: 'none',
-                borderRadius: '4px',
-                backgroundColor: 'transparent',
-                color: '#a6adc8',
-                cursor: 'pointer',
-                fontSize: '14px',
-                transition: 'all 0.15s ease',
-                opacity: 0,
-              }}
               title="Remove terminal"
             >
               ×
@@ -1048,21 +979,11 @@ export const TerminalCell = React.memo<TerminalCellProps>(({
 
       <div
         ref={containerRef}
-        style={{
-          display: 'flex',
-          flexDirection: 'column',
-          flex: 1,
-          padding: '2px',
-          minHeight: '100px',
-          position: 'relative',
-          backgroundColor: isDragOver ? 'rgba(137, 180, 250, 0.2)' : 'transparent',
-          transition: 'background-color 0.2s',
-          overflow: 'hidden',
-        }}
+        className={`terminal-canvas-area${isDragOver ? ' drag-over' : ''}`}
       >
         {isDragOver && (
-          <div style={styles.dragOverlay}>
-            <span style={styles.dragText}>Drop files to insert paths</span>
+          <div className="terminal-drag-overlay">
+            <span className="terminal-drag-text">Drop files to insert paths</span>
           </div>
         )}
       </div>
@@ -1085,41 +1006,12 @@ export const TerminalCell = React.memo<TerminalCellProps>(({
 
       {/* Spawn Error Toast Notification */}
       {spawnError && (
-        <div
-          style={{
-            position: 'absolute',
-            top: '16px',
-            left: '50%',
-            transform: 'translateX(-50%)',
-            backgroundColor: '#f38ba8',
-            color: '#1e1e2e',
-            padding: '12px 20px',
-            borderRadius: '8px',
-            fontSize: '13px',
-            fontWeight: 600,
-            boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)',
-            zIndex: 1000,
-            display: 'flex',
-            alignItems: 'center',
-            gap: '8px',
-            maxWidth: '90%',
-            textAlign: 'center',
-          }}
-        >
+        <div className="terminal-error-toast">
           <span>⚠️</span>
           <span>{spawnError}</span>
           <button
             onClick={() => setSpawnError(null)}
-            style={{
-              background: 'none',
-              border: 'none',
-              color: '#1e1e2e',
-              fontSize: '18px',
-              cursor: 'pointer',
-              padding: '0 4px',
-              marginLeft: '8px',
-              opacity: 0.7,
-            }}
+            className="terminal-error-toast-close"
             title="Close"
           >
             ×

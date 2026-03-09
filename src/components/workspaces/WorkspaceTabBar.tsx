@@ -172,7 +172,17 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
 };
 
 export const WorkspaceTabBar: React.FC = () => {
-  const { workspaces, currentWorkspace, setCurrentWorkspace, removeWorkspace, updateWorkspace, setWorkspaceModalOpen, theme, setTheme, isWorkspaceModalOpen, setWorkspaceModalOpenWithEdit } = useWorkspaceStore();
+  // Individual selectors to prevent re-rendering when unrelated state changes
+  const workspaces = useWorkspaceStore((s) => s.workspaces);
+  const currentWorkspace = useWorkspaceStore((s) => s.currentWorkspace);
+  const theme = useWorkspaceStore((s) => s.theme);
+  const isWorkspaceModalOpen = useWorkspaceStore((s) => s.isWorkspaceModalOpen);
+  const setCurrentWorkspace = useWorkspaceStore((s) => s.setCurrentWorkspace);
+  const removeWorkspace = useWorkspaceStore((s) => s.removeWorkspace);
+  const updateWorkspace = useWorkspaceStore((s) => s.updateWorkspace);
+  const setWorkspaceModalOpen = useWorkspaceStore((s) => s.setWorkspaceModalOpen);
+  const setTheme = useWorkspaceStore((s) => s.setTheme);
+  const setWorkspaceModalOpenWithEdit = useWorkspaceStore((s) => s.setWorkspaceModalOpenWithEdit);
   const [contextMenu, setContextMenu] = useState<{
     x: number;
     y: number;
@@ -237,7 +247,7 @@ export const WorkspaceTabBar: React.FC = () => {
   const handleEditLayout = useCallback((id: string) => {
     const workspace = workspaces.find(ws => ws.id === id);
     if (!workspace) return;
-    
+
     setWorkspaceModalOpenWithEdit(workspace);
     setContextMenu(null);
   }, [workspaces, setWorkspaceModalOpenWithEdit]);
@@ -319,7 +329,7 @@ export const WorkspaceTabBar: React.FC = () => {
               </div>
             );
           })}
-          
+
           <button
             className="add-workspace-tab"
             onClick={() => setWorkspaceModalOpen(true)}
@@ -337,7 +347,7 @@ export const WorkspaceTabBar: React.FC = () => {
               <span className="total-count-number">{totalTerminals}</span>
             </div>
           )}
-          
+
           {currentWorkspace && (
             <button
               className="action-btn edit-layout-btn"
