@@ -205,7 +205,6 @@ export const WorkspaceTabBar: React.FC = () => {
 
   const confirmDelete = useCallback(() => {
     if (deleteModal) {
-      console.log('[TabBar] Deleting workspace:', deleteModal.workspaceId);
       removeWorkspace(deleteModal.workspaceId);
       setDeleteModal(null);
     }
@@ -270,7 +269,6 @@ export const WorkspaceTabBar: React.FC = () => {
 
   const handleWorkspaceClick = useCallback((workspaceId: string) => {
     const ws = workspaces.find(w => w.id === workspaceId);
-    console.log('[TabBar] Workspace tab clicked:', ws?.name);
     setCurrentWorkspace(ws!);
   }, [workspaces, setCurrentWorkspace]);
 

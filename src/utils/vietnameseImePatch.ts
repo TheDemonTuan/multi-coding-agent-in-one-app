@@ -105,16 +105,16 @@ class PatchLogger {
   
   debug(msg: string): void {
     if (this.debugMode) {
-      console.log('[VietnameseIME] [DEBUG]', msg);
+      
     }
   }
   
   info(msg: string): void {
-    console.log('[VietnameseIME]', msg);
+    
   }
   
   warn(msg: string): void {
-    console.warn('[VietnameseIME] [WARN]', msg);
+    
   }
   
   error(msg: string, err?: any): void {
@@ -383,7 +383,7 @@ export function patchContentJs(fileContent: string): PatchResult {
   const startTime = Date.now();
   const originalSize = fileContent.length;
   
-  logger.debug('Patching JavaScript content...');
+
   
   // Quick checks
   if (isAlreadyPatched(fileContent)) {
@@ -400,7 +400,7 @@ export function patchContentJs(fileContent: string): PatchResult {
   let patternUsed = '';
   
   for (const [patternName, pattern] of Object.entries(PATTERNS)) {
-    logger.debug(`Trying pattern: ${patternName}`);
+
     
     // Reset regex lastIndex
     pattern.lastIndex = 0;
@@ -422,7 +422,7 @@ ${m2 || ''}`.replace(/^\s+/gm, '');
     
     if (testContent.length > newContent.length) {
       newContent = testContent;
-      logger.debug(`Pattern ${patternName} matched! Size increased by ${testContent.length - newContent.length} bytes`);
+
       break;
     }
   }
@@ -438,7 +438,7 @@ ${m2 || ''}`.replace(/^\s+/gm, '');
   }
   
   const patchTime = Date.now() - startTime;
-  logger.debug(`Patch applied using ${patternUsed} pattern in ${patchTime}ms`);
+
   
   return {
     success: true,
@@ -454,7 +454,7 @@ export function patchContentBinary(binaryContent: string): PatchResult {
   const startTime = Date.now();
   const originalSize = binaryContent.length;
   
-  logger.debug('Patching binary content...');
+
   
   // Quick checks
   if (isAlreadyPatched(binaryContent)) {
@@ -505,7 +505,7 @@ ${m2 || ''}`.replace(/^\s+/gm, '');
     });
     
     if (matches.length > 0) {
-      logger.debug(`Pattern ${patternName} found ${matches.length} match(es)`);
+
       break;
     }
   }
@@ -549,7 +549,7 @@ ${m2 || ''}`.replace(/^\s+/gm, '');
     }
     
     if (!matches[i].found) {
-      logger.warn(`Could not adjust pragma for match ${i}`);
+
     }
   }
   
@@ -559,7 +559,7 @@ ${m2 || ''}`.replace(/^\s+/gm, '');
   }
   
   const patchTime = Date.now() - startTime;
-  logger.debug(`Binary patch completed in ${patchTime}ms`);
+
   
   return {
     success: true,
@@ -600,7 +600,7 @@ export function restoreFromBackup(): RestoreResult {
     
     // Restore
     fs.copyFileSync(backupPath, targetPath);
-    logger.info('✓ Restored from backup');
+
     
     return {
       success: true,
@@ -634,7 +634,7 @@ export function forceUnpatch(): PatchResult {
     const backupPath = targetPath + BACKUP_EXTENSION;
     if (!fs.existsSync(backupPath)) {
       fs.copyFileSync(targetPath, backupPath);
-      logger.info('Created backup before unpatch');
+
     }
     
     // Remove DORK markers
@@ -650,7 +650,7 @@ export function forceUnpatch(): PatchResult {
     }
     
     fs.writeFileSync(targetPath, unpatchedContent, 'latin1');
-    logger.info('✓ Force unpatched successfully');
+
     
     return {
       success: true,
@@ -690,7 +690,7 @@ export async function applyVietnameseImePatch(): Promise<PatchResult> {
   let processesKilled = 0;
   
   if (isBinary) {
-    logger.info('Binary detected, closing Claude processes...');
+
     const killResult = killClaudeProcesses();
     
     if (!killResult.success) {
@@ -704,7 +704,7 @@ export async function applyVietnameseImePatch(): Promise<PatchResult> {
     processesKilled = killResult.count;
     
     if (processesKilled > 0) {
-      logger.info(`Closed ${processesKilled} Claude process(es)`);
+
       await new Promise(resolve => setTimeout(resolve, 500));
     }
   }
@@ -718,9 +718,9 @@ export async function applyVietnameseImePatch(): Promise<PatchResult> {
     const compat = isVersionCompatible(version);
     
     if (!compat.compatible) {
-      logger.warn(compat.message);
+
     } else {
-      logger.debug(compat.message);
+
     }
     
     // Apply patch
@@ -730,7 +730,7 @@ export async function applyVietnameseImePatch(): Promise<PatchResult> {
       : patchContentBinary(fileContent);
     
     if (result.alreadyPatched) {
-      logger.info('✓ Already patched');
+
       return { 
         ...result, 
         patchedPath: targetPath,
@@ -751,7 +751,7 @@ export async function applyVietnameseImePatch(): Promise<PatchResult> {
     // Create backup
     const backupPath = targetPath + BACKUP_EXTENSION;
     fs.copyFileSync(targetPath, backupPath);
-    logger.debug(`Backup created: ${backupPath}`);
+
     
     // Write patched file
     fs.writeFileSync(targetPath, result.content, 'latin1');
@@ -986,7 +986,7 @@ export function findClaudePath(): string | null {
     }
   };
   
-  logger.debug('Searching for Claude Code...');
+
   
   // 1) which / where / bun which
   for (const cmd of [
@@ -995,7 +995,7 @@ export function findClaudePath(): string | null {
   ]) {
     const p = run(cmd);
     if (exists(p)) {
-      logger.debug(`Found via ${cmd}: ${p}`);
+
       if (!isWin) {
         try {
           return execSync(`realpath "${p}"`).toString().trim();
@@ -1028,7 +1028,7 @@ export function findClaudePath(): string | null {
   
   for (const p of bunPaths) {
     if (exists(p)) {
-      logger.debug(`Found in bun: ${p}`);
+
       return p;
     }
   }
@@ -1043,7 +1043,7 @@ export function findClaudePath(): string | null {
       'cli.js'
     );
     if (exists(cliPath)) {
-      logger.debug(`Found in npm: ${cliPath}`);
+
       return cliPath;
     }
   } catch (e) {}
@@ -1088,12 +1088,12 @@ export function findClaudePath(): string | null {
   
     for (const p of paths) {
       if (exists(p)) {
-        logger.debug(`Found in Windows: ${p}`);
+
         return p;
       }
     }
   }
   
-  logger.debug('Claude Code not found');
+
   return null;
 }

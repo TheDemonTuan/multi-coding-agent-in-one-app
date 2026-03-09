@@ -2,6 +2,98 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## ⚠️ SERENA TOOLS - MANDATORY FIRST PRIORITY
+
+**CRITICAL**: When working with code, you **MUST** use Serena tools as **FIRST PRIORITY**. Default tools are **FORBIDDEN** for code operations when a Serena alternative exists.
+
+### Complete Serena Tools Reference
+
+| Category | Task | Default Tool (AVOID) | Serena Tool (MANDATORY) |
+|----------|------|---------------------|------------------------|
+| **File Reading** | Read file/directory | `cat`, `head`, `tail`, `ls`, `Read`, `Glob` | `mcp__plugin_serena_serena__read_file`, `mcp__plugin_serena_serena__list_dir` |
+| **File Discovery** | Find files | `find`, `ls`, `Glob` | `mcp__plugin_serena_serena__find_file` |
+| **Content Search** | Search text/regex | `grep`, `rg`, `Grep` | `mcp__plugin_serena_serena__search_for_pattern` |
+| **Symbol Discovery** | Find classes/functions/variables | - | `mcp__plugin_serena_serena__find_symbol` |
+| **Symbol Overview** | Get file structure | - | `mcp__plugin_serena_serena__get_symbols_overview` |
+| **References** | Find usages | - | `mcp__plugin_serena_serena__find_referencing_symbols` |
+| **Symbol Edit** | Replace function/class body | `Edit`, `sed` | `mcp__plugin_serena_serena__replace_symbol_body` |
+| **Insert Code** | Add code before/after symbol | `Edit` | `mcp__plugin_serena_serena__insert_before_symbol`, `mcp__plugin_serena_serena__insert_after_symbol` |
+| **Rename** | Rename symbol everywhere | - | `mcp__plugin_serena_serena__rename_symbol` |
+| **File Edit** | Regex/string replacement | `sed`, `awk`, `Edit` | `mcp__plugin_serena_serena__replace_content` |
+| **File Create** | Create new file | `Write`, `echo >` | `mcp__plugin_serena_serena__create_text_file` |
+| **Shell** | Execute commands | `Bash` | `mcp__plugin_serena_serena__execute_shell_command` |
+| **Memory** | Project memory | - | `mcp__plugin_serena_serena__write_memory`, `mcp__plugin_serena_serena__read_memory`, `mcp__plugin_serena_serena__list_memories`, `mcp__plugin_serena_serena__edit_memory`, `mcp__plugin_serena_serena__delete_memory`, `mcp__plugin_serena_serena__rename_memory` |
+| **Project** | Project config | - | `mcp__plugin_serena_serena__get_current_config`, `mcp__plugin_serena_serena__activate_project`, `mcp__plugin_serena_serena__check_onboarding_performed`, `mcp__plugin_serena_serena__onboarding` |
+| **Modes** | Operation modes | - | `mcp__plugin_serena_serena__switch_modes` |
+| **Dashboard** | Open web UI | - | `mcp__plugin_serena_serena__open_dashboard` |
+| **Session** | Prepare new conversation | - | `mcp__plugin_serena_serena__prepare_for_new_conversation` |
+
+### Decision Flow (STRICT)
+
+```
+┌─────────────────────────────────────────────────────────┐
+│  Starting a code-related task?                          │
+└─────────────────────────────────────────────────────────┘
+                          │
+                          ▼
+         ┌────────────────────────────────┐
+         │  1. Can Serena do this?        │─────────NO─────────┐
+         └────────────────────────────────┘                    │
+                          │ YES                                │
+                          ▼                                    ▼
+         ┌────────────────────────────────┐         ┌──────────────────────┐
+         │  2. Is it a code operation?    │         │  Use default tools:  │
+         └────────────────────────────────┘         │  - git commands      │
+                          │                         │  - bun/npm commands  │
+         ┌────────────────┴────────────────┐        │  - system commands   │
+         │ YES                             │        └──────────────────────┘
+         ▼                                 │
+┌────────────────────────────────┐         │
+│  3. Use Serena tool EXCLUSIVELY│         │
+│  - find_symbol for code search │         │
+│  - replace_symbol_body for     │         │
+│    function/class edits        │         │
+│  - replace_content for         │         │
+│    regex-based file edits      │         │
+│  - search_for_pattern for      │         │
+│    content exploration         │         │
+│  - read_file for file reading  │         │
+│  - list_dir for directories    │         │
+│  - find_file for file masks    │         │
+└────────────────────────────────┘         │
+         │                                 │
+         └─────────────────────────────────┘
+```
+
+### Forbidden Patterns (NEVER USE)
+
+| Instead of... | Use... |
+|---------------|--------|
+| `grep "pattern" src/` | `search_for_pattern` |
+| `find . -name "*.ts"` | `find_file` with `*.ts` |
+| `cat src/file.ts` | `read_file` |
+| `ls src/components/` | `list_dir` |
+| `sed -i 's/old/new/g' file.ts` | `replace_content` with regex mode |
+| `Edit` tool for symbol edits | `replace_symbol_body`, `insert_before_symbol`, `insert_after_symbol` |
+| `Read` tool for files | `read_file` |
+| `Glob` for files | `find_file` |
+| `Grep` for content | `search_for_pattern` |
+
+### Allowed Default Tool Usage
+
+Only use non-Serena tools for:
+- **Git operations**: `git status`, `git diff`, `git commit`, `git log`, etc.
+- **Package manager**: `bun install`, `bun run`, `npm`, `yarn`, `pnpm`
+- **System operations**: Platform checks, environment variables (when not code-related)
+
+### Serena Best Practices
+
+1. **Symbol-first editing**: Always try `find_symbol` + `replace_symbol_body` before `replace_content`
+2. **Regex mode**: Use `replace_content` with `mode: "regex"` for complex multi-line replacements
+3. **Smart patterns**: Use `.*?` non-greedy wildcards to avoid over-matching
+4. **File masks**: Use `find_file` with masks like `*.handler.ts` for precise file discovery
+5. **Symbol paths**: Use absolute paths like `/TerminalService/constructor` for precise targeting
+
 ## Commands
 
 ```bash

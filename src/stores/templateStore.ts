@@ -126,7 +126,6 @@ export const useTemplateStore = create<TemplateState>((set, get) => ({
 
   loadTemplates: async () => {
     if (typeof window === 'undefined' || !(window as any).electronAPI) {
-      console.log('[TemplateStore] electronAPI not available, loading built-in templates only');
       set({ templates: BUILTIN_TEMPLATES });
       return;
     }
@@ -139,10 +138,8 @@ export const useTemplateStore = create<TemplateState>((set, get) => ({
       if (storedTemplates && Array.isArray(storedTemplates)) {
         const customTemplates = storedTemplates.filter((t: Template) => !t.isBuiltIn);
         set({ templates: [...BUILTIN_TEMPLATES, ...customTemplates] });
-        console.log('[TemplateStore] Loaded templates:', BUILTIN_TEMPLATES.length + customTemplates.length);
       } else {
         set({ templates: BUILTIN_TEMPLATES });
-        console.log('[TemplateStore] No custom templates found, using built-in only');
       }
     } catch (err) {
       console.error('[TemplateStore] Failed to load templates:', err);
@@ -154,7 +151,6 @@ export const useTemplateStore = create<TemplateState>((set, get) => ({
 
   saveCustomTemplate: async (template: Template) => {
     if (typeof window === 'undefined' || !(window as any).electronAPI) {
-      console.log('[TemplateStore] electronAPI not available, cannot save template');
       return;
     }
 
@@ -164,7 +160,6 @@ export const useTemplateStore = create<TemplateState>((set, get) => ({
     try {
       await (window as any).electronAPI.saveTemplate(template);
       set({ templates: [...BUILTIN_TEMPLATES, ...customTemplates, template] });
-      console.log('[TemplateStore] Saved custom template:', template.name);
     } catch (err) {
       console.error('[TemplateStore] Failed to save template:', err);
       throw err;
@@ -173,7 +168,6 @@ export const useTemplateStore = create<TemplateState>((set, get) => ({
 
   deleteCustomTemplate: async (id: string) => {
     if (typeof window === 'undefined' || !(window as any).electronAPI) {
-      console.log('[TemplateStore] electronAPI not available, cannot delete template');
       return;
     }
 
@@ -182,7 +176,6 @@ export const useTemplateStore = create<TemplateState>((set, get) => ({
       const { templates } = get();
       const updatedCustom = templates.filter(t => t.isBuiltIn || t.id !== id);
       set({ templates: updatedCustom });
-      console.log('[TemplateStore] Deleted template:', id);
     } catch (err) {
       console.error('[TemplateStore] Failed to delete template:', err);
       throw err;
@@ -191,7 +184,6 @@ export const useTemplateStore = create<TemplateState>((set, get) => ({
 
   updateCustomTemplate: async (template: Template) => {
     if (typeof window === 'undefined' || !(window as any).electronAPI) {
-      console.log('[TemplateStore] electronAPI not available, cannot update template');
       return;
     }
 
@@ -201,7 +193,6 @@ export const useTemplateStore = create<TemplateState>((set, get) => ({
       const customTemplates = templates.filter(t => !t.isBuiltIn);
       const updatedCustom = customTemplates.map(t => t.id === template.id ? template : t);
       set({ templates: [...BUILTIN_TEMPLATES, ...updatedCustom] });
-      console.log('[TemplateStore] Updated template:', template.name);
     } catch (err) {
       console.error('[TemplateStore] Failed to update template:', err);
       throw err;

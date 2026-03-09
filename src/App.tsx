@@ -38,14 +38,12 @@ function App() {
 
   // Load workspaces from electron-store on mount (only once)
   useEffect(() => {
-    console.log('[App] Loading workspaces on mount...');
     loadWorkspaces();
   }, []);
 
   // Listen for workspace switcher open event from TerminalCell
   useEffect(() => {
     const handleOpenWorkspaceSwitcher = () => {
-      console.log('[App] Received open-workspace-switcher event from TerminalCell');
       setWorkspaceSwitcherOpen(true);
     };
 
@@ -81,7 +79,6 @@ function App() {
 
         // Always cycle to next workspace when Ctrl+Tab is pressed
         const nextWs = nextWorkspace();
-        console.log('[App] Ctrl+Tab pressed, cycling to next workspace:', nextWs?.name);
 
         // Open modal to show preview
         setWorkspaceSwitcherOpen(true);
@@ -92,7 +89,6 @@ function App() {
       if (e.ctrlKey && e.shiftKey && e.key === 'Tab') {
         e.preventDefault();
         const prevWorkspace = previousWorkspace();
-        console.log('[App] Ctrl+Shift+Tab pressed, cycling to previous workspace:', prevWorkspace?.name);
         setWorkspaceSwitcherOpen(true);
         return;
       }
@@ -101,7 +97,6 @@ function App() {
       if (e.ctrlKey && e.key === 'PageUp') {
         e.preventDefault();
         const prevWorkspace = previousWorkspace();
-        console.log('[App] Ctrl+PageUp pressed, switching to:', prevWorkspace?.name);
         return;
       }
 
@@ -109,7 +104,6 @@ function App() {
       if (e.ctrlKey && e.key === 'PageDown') {
         e.preventDefault();
         const nextWorkspaceResult = nextWorkspace();
-        console.log('[App] Ctrl+PageDown pressed, switching to:', nextWorkspaceResult?.name);
         return;
       }
 
@@ -157,7 +151,6 @@ function App() {
       if (e.key === 'Control') {
         // Close workspace switcher when Ctrl is released
         if (workspaceSwitcherOpen) {
-          console.log('[App] Ctrl released, closing modal');
           setWorkspaceSwitcherOpen(false);
         }
       }
@@ -186,11 +179,9 @@ function App() {
   ]);
 
   const handleSelectWorkspace = (workspaceId: string) => {
-    console.log('[App] handleSelectWorkspace called with:', workspaceId);
     const ws = workspaces.find(w => w.id === workspaceId);
     if (ws) {
       setCurrentWorkspace(ws);
-      console.log('[App] Switched to workspace:', ws.name);
     }
     setWorkspaceSwitcherOpen(false);
   };
@@ -299,7 +290,6 @@ function App() {
       <WorkspaceSwitcherModal
         isOpen={workspaceSwitcherOpen}
         onClose={() => {
-          console.log('[App] Modal onClose called');
           setWorkspaceSwitcherOpen(false);
         }}
         onSelectWorkspace={handleSelectWorkspace}

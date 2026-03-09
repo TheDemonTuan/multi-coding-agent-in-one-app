@@ -395,8 +395,6 @@ export const TerminalCell = React.memo<TerminalCellProps>(({
       return;
     }
 
-    console.log(`[TerminalCell ${terminal.id}] Initializing terminal`);
-
     if (containerRef.current) {
       containerRef.current.innerHTML = '';
     }
@@ -430,15 +428,12 @@ export const TerminalCell = React.memo<TerminalCellProps>(({
     try {
       const webglAddon = new WebglAddon();
       webglAddon.onContextLoss(() => {
-        console.warn(`[TerminalCell ${terminal.id}] WebGL context lost, falling back to Canvas renderer`);
         webglAddon.dispose();
         webglAddonRef.current = null;
       });
       term.loadAddon(webglAddon);
       webglAddonRef.current = webglAddon;
-      console.log(`[TerminalCell ${terminal.id}] WebGL renderer loaded successfully (GPU-accelerated)`);
     } catch (err) {
-      console.warn(`[TerminalCell ${terminal.id}] WebGL unavailable, using Canvas renderer:`, err);
     }
 
     // Delay initial fit to ensure container has proper dimensions
@@ -496,10 +491,7 @@ export const TerminalCell = React.memo<TerminalCellProps>(({
             lastDimensionsRef.current.cols !== cols ||
             lastDimensionsRef.current.rows !== rows) {
             lastDimensionsRef.current = { cols, rows };
-            console.log(`[TerminalCell ${terminal.id}] Resizing terminal to ${cols}x${rows} (debounced)`);
             (window as any).electronAPI.terminalResize(terminal.id, cols, rows);
-          } else {
-            console.log(`[TerminalCell ${terminal.id}] Resize skipped - dimensions unchanged at ${cols}x${rows}`);
           }
         }
       }, 150); // 150ms debounce delay (VAL-PERF-001: 100-200ms range)
@@ -508,7 +500,6 @@ export const TerminalCell = React.memo<TerminalCellProps>(({
 
     // Store onScroll handler disposable (VAL-MEM-004)
     xtermDisposablesRef.current.onScrollDisposable = term.onScroll(handleScroll);
-    console.log(`[TerminalCell ${terminal.id}] Registered onScroll handler`);
 
     if (terminal.agent?.enabled && terminal.agent.type !== 'none') {
       const agentIcon = agentIcons[terminal.agent.type] || '🔧';
@@ -516,7 +507,6 @@ export const TerminalCell = React.memo<TerminalCellProps>(({
     }
 
     // Setup event listeners (VAL-MEM-003)
-    console.log(`[TerminalCell ${terminal.id}] Subscribing to IPC events...`);
 
     listenersRef.current.unsubscribeData = (window as any).electronAPI.onTerminalData(({ id, data }: { id: string; data: string }) => {
       if (id === terminal.id && terminalRef.current) {
@@ -526,7 +516,6 @@ export const TerminalCell = React.memo<TerminalCellProps>(({
         const { cleaned, markers } = parseOSC133(data);
         if (markers.length > 0) {
           commandBlockTrackerRef.current?.processMarkers(markers);
-          console.debug(`[TerminalCell ${terminal.id}] OSC 133 markers:`, markers);
         }
         const outputData = markers.length > 0 ? cleaned : data;
 
@@ -543,7 +532,6 @@ export const TerminalCell = React.memo<TerminalCellProps>(({
         }
       }
     });
-    console.log(`[TerminalCell ${terminal.id}] Subscribed to onTerminalData`);
 
     listenersRef.current.unsubscribeStarted = (window as any).electronAPI.onTerminalStarted(({ id }: { id: string }) => {
       if (id === terminal.id) {
@@ -558,20 +546,16 @@ export const TerminalCell = React.memo<TerminalCellProps>(({
             fitAddonRef.current.fit();
             const { cols, rows } = terminalRef.current;
             (window as any).electronAPI?.terminalResize(terminal.id, cols, rows);
-            console.log(`[TerminalCell ${terminal.id}] Synced PTY size after start: ${cols}x${rows}`);
           } catch (err) {
-            console.warn(`[TerminalCell ${terminal.id}] Failed to sync size after start:`, err);
           }
         }
       }
     });
-    console.log(`[TerminalCell ${terminal.id}] Subscribed to onTerminalStarted`);
 
     listenersRef.current.unsubscribeExit = (window as any).electronAPI.onTerminalExit(({ id, code, signal }: { id: string; code: number | null; signal?: string }) => {
       if (id === terminal.id) {
         // Skip exit processing if terminal is restarting (prevents race condition setting status to stopped)
         if (isTerminalRestarting(terminal.id)) {
-          console.log(`[TerminalCell ${terminal.id}] Ignoring exit event because terminal is restarting`);
           return;
         }
 
@@ -584,7 +568,7 @@ export const TerminalCell = React.memo<TerminalCellProps>(({
         updateTerminalStatus(terminal.id, 'stopped');
       }
     });
-    console.log(`[TerminalCell ${terminal.id}] Subscribed to onTerminalExit`);
+    
 
     listenersRef.current.unsubscribeError = (window as any).electronAPI.onTerminalError(({ id, error }: { id: string; error: string }) => {
       if (id === terminal.id) {
@@ -602,7 +586,7 @@ export const TerminalCell = React.memo<TerminalCellProps>(({
     xtermDisposablesRef.current.onDataDisposable = term.onData((data: string) => {
       (window as any).electronAPI.terminalWrite(terminal.id, data);
     });
-    console.log(`[TerminalCell ${terminal.id}] Registered onData handler`);
+    
 
     // Register custom key event handler (VAL-MEM-004)
     // attachCustomKeyEventHandler returns void, so we store a cleanup function
@@ -696,7 +680,7 @@ export const TerminalCell = React.memo<TerminalCellProps>(({
     xtermDisposablesRef.current.customKeyHandlerCleanup = () => {
       customKeyHandlerRegistered = false;
     };
-    console.log(`[TerminalCell ${terminal.id}] Registered custom key event handler`);
+    
 
     // Spawn terminal process
     const workspaceId = currentWorkspace?.id;
@@ -709,7 +693,7 @@ export const TerminalCell = React.memo<TerminalCellProps>(({
       .then((result: any) => {
         if (result?.pid) {
           setTerminalProcessId(terminal.id, result.pid);
-          console.log(`[TerminalCell ${terminal.id}] Spawned process with PID: ${result.pid}`);
+          
         } else if (result?.success === false && result?.error) {
           // Handle validation errors from main process
           setSpawnError(result.error);
@@ -729,7 +713,7 @@ export const TerminalCell = React.memo<TerminalCellProps>(({
       });
 
     return () => {
-      console.log(`[TerminalCell ${terminal.id}] Cleaning up terminal`);
+      
 
       // Clear all error toast timers to prevent memory leaks
       errorToastTimersRef.current.forEach(timer => clearTimeout(timer));
@@ -748,62 +732,62 @@ export const TerminalCell = React.memo<TerminalCellProps>(({
       }
 
       // Unsubscribe all IPC event listeners to prevent memory leaks (VAL-MEM-003)
-      console.log(`[TerminalCell ${terminal.id}] Unsubscribing IPC listeners...`);
+      
       if (listenersRef.current.unsubscribeData) {
-        console.log(`[TerminalCell ${terminal.id}] Unsubscribing onTerminalData listener`);
+        
         listenersRef.current.unsubscribeData();
       }
       if (listenersRef.current.unsubscribeStarted) {
-        console.log(`[TerminalCell ${terminal.id}] Unsubscribing onTerminalStarted listener`);
+        
         listenersRef.current.unsubscribeStarted();
       }
       if (listenersRef.current.unsubscribeExit) {
-        console.log(`[TerminalCell ${terminal.id}] Unsubscribing onTerminalExit listener`);
+        
         listenersRef.current.unsubscribeExit();
       }
       if (listenersRef.current.unsubscribeError) {
-        console.log(`[TerminalCell ${terminal.id}] Unsubscribing onTerminalError listener`);
+        
         listenersRef.current.unsubscribeError();
       }
-      console.log(`[TerminalCell ${terminal.id}] IPC listeners unsubscribed, listenersRef.current:`, listenersRef.current);
+      
       listenersRef.current = {};
-      console.log(`[TerminalCell ${terminal.id}] listenersRef.current cleared:`, listenersRef.current);
+      
 
       // Kill PTY process in main process BEFORE disposing UI terminal
       // This ensures the process is terminated and won't send more data
       if (typeof window !== 'undefined' && (window as any).electronAPI) {
         // Synchronously fire-and-forget to avoid await delays during cleanup
         (window as any).electronAPI.terminalKill(terminal.id).catch((err: any) => {
-          console.warn(`[TerminalCell ${terminal.id}] Failed to kill terminal process:`, err);
+          
         });
       }
 
       // Dispose xterm.js event handlers (VAL-MEM-004)
       // Must be done BEFORE terminal.dispose() to properly detach all handlers
-      console.log(`[TerminalCell ${terminal.id}] Disposing xterm.js event handlers...`);
+      
 
       // Dispose onData handler
       if (xtermDisposablesRef.current.onDataDisposable) {
-        console.log(`[TerminalCell ${terminal.id}] Disposing onData handler`);
+        
         xtermDisposablesRef.current.onDataDisposable.dispose();
         xtermDisposablesRef.current.onDataDisposable = undefined;
       }
 
       // Dispose onScroll handler
       if (xtermDisposablesRef.current.onScrollDisposable) {
-        console.log(`[TerminalCell ${terminal.id}] Disposing onScroll handler`);
+        
         xtermDisposablesRef.current.onScrollDisposable.dispose();
         xtermDisposablesRef.current.onScrollDisposable = undefined;
       }
 
       // Cleanup custom key event handler
       if (xtermDisposablesRef.current.customKeyHandlerCleanup) {
-        console.log(`[TerminalCell ${terminal.id}] Disposing custom key event handler`);
+        
         xtermDisposablesRef.current.customKeyHandlerCleanup();
         xtermDisposablesRef.current.customKeyHandlerCleanup = undefined;
       }
 
-      console.log(`[TerminalCell ${terminal.id}] xterm.js event handlers disposed`);
+      
 
       // Dispose xterm.js terminal and all addons (VAL-MEM-004)
       // Dispose addons explicitly before terminal disposal for clarity
@@ -813,7 +797,7 @@ export const TerminalCell = React.memo<TerminalCellProps>(({
         try {
           webglAddonRef.current.dispose();
         } catch (err: any) {
-          console.warn(`[TerminalCell ${terminal.id}] Error disposing WebglAddon:`, err);
+          
         }
         webglAddonRef.current = null;
       }
@@ -822,7 +806,7 @@ export const TerminalCell = React.memo<TerminalCellProps>(({
         try {
           fitAddonRef.current.dispose();
         } catch (err: any) {
-          console.warn(`[TerminalCell ${terminal.id}] Error disposing FitAddon:`, err);
+          
         }
         fitAddonRef.current = null;
       }
@@ -831,7 +815,7 @@ export const TerminalCell = React.memo<TerminalCellProps>(({
         try {
           webLinksAddonRef.current.dispose();
         } catch (err: any) {
-          console.warn(`[TerminalCell ${terminal.id}] Error disposing WebLinksAddon:`, err);
+          
         }
         webLinksAddonRef.current = null;
       }
@@ -840,7 +824,7 @@ export const TerminalCell = React.memo<TerminalCellProps>(({
         try {
           searchAddonRef.current.dispose();
         } catch (err: any) {
-          console.warn(`[TerminalCell ${terminal.id}] Error disposing SearchAddon:`, err);
+          
         }
         searchAddonRef.current = null;
       }
@@ -851,7 +835,7 @@ export const TerminalCell = React.memo<TerminalCellProps>(({
       // - Any remaining internal cleanup
       if (terminalRef.current) {
         try {
-          console.log(`[TerminalCell ${terminal.id}] Calling terminal.dispose()`);
+          
           terminalRef.current.dispose();
         } catch (err: any) {
           console.error(`[TerminalCell ${terminal.id}] Error disposing terminal:`, err);

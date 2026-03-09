@@ -58,7 +58,6 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
 
   loadSettings: async () => {
     if (typeof window === 'undefined' || !(window as any).electronAPI) {
-      console.log('[SettingsStore] electronAPI not available, using defaults');
       return;
     }
 
@@ -69,9 +68,6 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
 
       if (stored) {
         set({ settings: { ...DEFAULT_SETTINGS, ...stored } });
-        console.log('[SettingsStore] Loaded settings');
-      } else {
-        console.log('[SettingsStore] No stored settings, using defaults');
       }
     } catch (err) {
       console.error('[SettingsStore] Failed to load settings:', err);
@@ -82,7 +78,6 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
 
   saveSettings: async () => {
     if (typeof window === 'undefined' || !(window as any).electronAPI) {
-      console.log('[SettingsStore] electronAPI not available, cannot save');
       return;
     }
 
@@ -90,7 +85,6 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
 
     try {
       await (window as any).electronAPI.setStoreValue(SETTINGS_STORAGE_KEY, settings);
-      console.log('[SettingsStore] Settings saved');
     } catch (err) {
       console.error('[SettingsStore] Failed to save settings:', err);
     }
@@ -109,18 +103,14 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   // Vietnamese IME settings actions
   loadVietnameseImeSettings: async () => {
     if (typeof window === 'undefined' || !(window as any).electronAPI) {
-      console.log('[SettingsStore] electronAPI not available for VN IME settings');
       return;
     }
 
     try {
       const stored = await (window as any).electronAPI.getStoreValue(VN_IME_SETTINGS_KEY);
-      
+
       if (stored) {
         set({ vietnameseIme: { ...DEFAULT_VN_IME_SETTINGS, ...stored } });
-        console.log('[SettingsStore] Loaded Vietnamese IME settings');
-      } else {
-        console.log('[SettingsStore] No stored VN IME settings, using defaults');
       }
     } catch (err) {
       console.error('[SettingsStore] Failed to load VN IME settings:', err);
@@ -129,7 +119,6 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
 
   saveVietnameseImeSettings: async () => {
     if (typeof window === 'undefined' || !(window as any).electronAPI) {
-      console.log('[SettingsStore] electronAPI not available, cannot save VN IME settings');
       return;
     }
 
@@ -137,7 +126,6 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
 
     try {
       await (window as any).electronAPI.setStoreValue(VN_IME_SETTINGS_KEY, vietnameseIme);
-      console.log('[SettingsStore] Vietnamese IME settings saved');
     } catch (err) {
       console.error('[SettingsStore] Failed to save VN IME settings:', err);
     }

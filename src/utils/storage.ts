@@ -9,7 +9,7 @@ import { STORAGE_KEYS } from '../config/constants';
  */
 export async function getStoreValue<T>(key: string): Promise<T | null> {
   if (typeof window === 'undefined' || !(window as any).electronAPI) {
-    console.warn('[Storage] electronAPI not available');
+    
     return null;
   }
 
@@ -27,7 +27,7 @@ export async function getStoreValue<T>(key: string): Promise<T | null> {
  */
 export async function setStoreValue<T>(key: string, value: T): Promise<boolean> {
   if (typeof window === 'undefined' || !(window as any).electronAPI) {
-    console.warn('[Storage] electronAPI not available');
+    
     return false;
   }
 

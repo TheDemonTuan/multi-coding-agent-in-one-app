@@ -26,12 +26,10 @@ const getShell = (): string => {
 if (typeof window !== 'undefined' && (window as any).electronAPI) {
   (window as any).electronAPI.getPlatform().then((platform: string) => {
     cachedPlatform = platform;
-    console.log('[WorkspaceStore] Platform initialized:', platform);
   }).catch(console.warn);
 
   (window as any).electronAPI.getCwd().then((cwd: string) => {
     cachedCwd = cwd;
-    console.log('[WorkspaceStore] CWD initialized:', cwd);
   }).catch(console.warn);
 }
 
@@ -98,8 +96,6 @@ const createDebounceSave = () => {
 };
 
 export const useWorkspaceStore = create<WorkspaceState>((set, get) => {
-  console.log('[WorkspaceStore] Initializing...');
-
   // Create instance-specific debounce save to prevent global timer leaks
   const debounceSave = createDebounceSave();
 
@@ -120,20 +116,17 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => {
 
     loadWorkspaces: () => {
       if (typeof window === 'undefined' || !(window as any).electronAPI) {
-        console.log('[WorkspaceStore] electronAPI not available, skipping load');
         return;
       }
 
       (window as any).electronAPI.getStoreValue(WORKSPACES_STORAGE_KEY)
         .then((stored: WorkspaceLayout[] | null) => {
           if (stored && Array.isArray(stored) && stored.length > 0) {
-            console.log('[WorkspaceStore] Loaded workspaces:', stored.length);
             set({
               workspaces: stored,
               currentWorkspace: stored[0] || null
             });
           } else {
-            console.log('[WorkspaceStore] No workspaces found in storage');
             set({
               workspaces: [],
               currentWorkspace: null
@@ -145,19 +138,16 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => {
 
     saveWorkspaces: () => {
       if (typeof window === 'undefined' || !(window as any).electronAPI) {
-        console.log('[WorkspaceStore] electronAPI not available, skipping save');
         return;
       }
 
       const { workspaces } = get();
-      console.log('[WorkspaceStore] Saving workspaces:', workspaces.length);
       (window as any).electronAPI.setStoreValue(WORKSPACES_STORAGE_KEY, workspaces)
-        .then(() => console.log('[WorkspaceStore] Saved successfully'))
+        .then(() => {})
         .catch((err: any) => console.error('[WorkspaceStore] Failed to save workspaces:', err));
     },
 
     setCurrentWorkspace: (workspace) => {
-      console.log('[WorkspaceStore] Setting workspace:', workspace.name);
       set((state) => {
         const newState = { currentWorkspace: workspace };
 
@@ -173,7 +163,6 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => {
           debounceSave(async () => {
             try {
               await (window as any).electronAPI.setStoreValue(WORKSPACES_STORAGE_KEY, state.workspaces);
-              console.log('[WorkspaceStore] Workspace set and saved (debounced)');
             } catch (err) {
               console.error('[WorkspaceStore] Failed to save after set:', err);
             }
@@ -194,7 +183,6 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => {
     },
 
     addWorkspace: (config) => {
-      console.log('[WorkspaceStore] Adding workspace:', config.name, config.columns, config.rows);
       const newWorkspace = createDefaultWorkspace(config);
       set((state) => {
         const updatedWorkspaces = [...state.workspaces, newWorkspace];
@@ -208,7 +196,6 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => {
           debounceSave(async () => {
             try {
               await (window as any).electronAPI.setStoreValue(WORKSPACES_STORAGE_KEY, updatedWorkspaces);
-              console.log('[WorkspaceStore] Workspace added and saved (debounced)');
             } catch (err) {
               console.error('[WorkspaceStore] Failed to save after add:', err);
             }
@@ -221,13 +208,10 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => {
     },
 
     removeWorkspace: async (id) => {
-      console.log('[WorkspaceStore] Removing workspace:', id);
-
       // First, kill terminals in main process
       if (typeof window !== 'undefined' && (window as any).electronAPI) {
         try {
           await (window as any).electronAPI.deleteWorkspace(id);
-          console.log('[WorkspaceStore] Workspace deleted in main process');
         } catch (err) {
           console.error('[WorkspaceStore] Failed to delete workspace in main process:', err);
         }
@@ -246,7 +230,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => {
         // Save immediately for delete operations (more critical)
         if (typeof window !== 'undefined' && (window as any).electronAPI) {
           (window as any).electronAPI.setStoreValue(WORKSPACES_STORAGE_KEY, updatedWorkspaces)
-            .then(() => console.log('[WorkspaceStore] Workspace removed and saved'))
+            .then(() => {})
             .catch((err: any) => console.error('[WorkspaceStore] Failed to save after remove:', err));
         }
 
@@ -255,7 +239,6 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => {
     },
 
     updateWorkspace: (id, updates) => {
-      console.log('[WorkspaceStore] Updating workspace:', id, updates);
       set((state) => {
         const updatedWorkspaces = state.workspaces.map(ws =>
           ws.id === id ? { ...ws, ...updates, lastUsed: Date.now() } : ws
@@ -273,7 +256,6 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => {
           debounceSave(async () => {
             try {
               await (window as any).electronAPI.setStoreValue(WORKSPACES_STORAGE_KEY, updatedWorkspaces);
-              console.log('[WorkspaceStore] Workspace updated and saved (debounced)');
             } catch (err) {
               console.error('[WorkspaceStore] Failed to save after update:', err);
             }
@@ -285,12 +267,10 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => {
     },
 
     setActiveTerminal: (id) => {
-      console.log('[WorkspaceStore] Setting active terminal:', id);
       set({ activeTerminalId: id });
     },
 
     setTheme: (theme) => {
-      console.log('[WorkspaceStore] Setting theme:', theme);
       set({ theme });
     },
 
@@ -302,7 +282,6 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => {
     },
 
     setWorkspaceModalOpenWithEdit: (workspace) => {
-      console.log('[WorkspaceStore] Opening modal for edit:', workspace.name);
       set({
         editingWorkspace: workspace,
         isWorkspaceModalOpen: true
@@ -337,7 +316,6 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => {
           debounceSave(async () => {
             try {
               await (window as any).electronAPI.setStoreValue(WORKSPACES_STORAGE_KEY, updatedWorkspaces);
-              console.log('[WorkspaceStore] Terminal agent updated and saved (debounced)');
             } catch (err) {
               console.error('[WorkspaceStore] Failed to save after agent update:', err);
             }
@@ -402,7 +380,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => {
 
       const terminals = state.currentWorkspace.terminals;
       if (terminals.length <= 1) {
-        console.warn('[WorkspaceStore] Cannot remove last terminal');
+        
         return;
       }
 
@@ -410,7 +388,6 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => {
       if (typeof window !== 'undefined' && (window as any).electronAPI) {
         try {
           await (window as any).electronAPI.terminalKill(terminalId);
-          console.log('[WorkspaceStore] Terminal process killed:', terminalId);
         } catch (err) {
           console.error('[WorkspaceStore] Failed to kill terminal:', err);
         }
@@ -464,7 +441,6 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => {
         debounceSave(async () => {
           try {
             await (window as any).electronAPI.setStoreValue(WORKSPACES_STORAGE_KEY, updatedWorkspaces);
-            console.log('[WorkspaceStore] Terminal removed and saved (debounced)');
           } catch (err) {
             console.error('[WorkspaceStore] Failed to save after remove:', err);
           }
@@ -533,7 +509,6 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => {
         debounceSave(async () => {
           try {
             await (window as any).electronAPI.setStoreValue(WORKSPACES_STORAGE_KEY, updatedWorkspaces);
-            console.log('[WorkspaceStore] Terminal split and saved (debounced)');
           } catch (err) {
             console.error('[WorkspaceStore] Failed to save after split:', err);
           }
@@ -594,8 +569,6 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => {
       const terminal = state.currentWorkspace.terminals.find(t => t.id === terminalId);
       if (!terminal) return;
 
-      console.log('[WorkspaceStore] Restarting terminal:', terminalId);
-
       // Add to restarting set to suppress exit events
       set((state) => {
         const newSet = new Set(state.restartingTerminals);
@@ -607,7 +580,6 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => {
       if (typeof window !== 'undefined' && (window as any).electronAPI) {
         try {
           await (window as any).electronAPI.terminalKill(terminalId);
-          console.log('[WorkspaceStore] Killed terminal process for restart:', terminalId);
         } catch (err) {
           console.error('[WorkspaceStore] Failed to kill terminal for restart:', err);
         }
@@ -637,7 +609,6 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => {
           }
 
           if (result.success) {
-            console.log('[WorkspaceStore] Terminal restarted successfully:', terminalId);
             useWorkspaceStore.getState().updateTerminalStatus(terminalId, 'running');
             if (result.pid) {
               useWorkspaceStore.getState().setTerminalProcessId(terminalId, result.pid);
@@ -666,8 +637,6 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => {
       const terminal = state.currentWorkspace.terminals.find(t => t.id === terminalId);
       if (!terminal) return;
 
-      console.log('[WorkspaceStore] Switching agent for terminal:', terminalId, 'to:', newAgentType);
-
       // Create new agent config
       const agentConfig = newAgentType === 'none' || newAgentType === ''
         ? { type: 'none' as const, enabled: false }
@@ -687,7 +656,6 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => {
       if (typeof window !== 'undefined' && (window as any).electronAPI) {
         try {
           await (window as any).electronAPI.terminalKill(terminalId);
-          console.log('[WorkspaceStore] Killed terminal process for agent switch:', terminalId);
         } catch (err) {
           console.error('[WorkspaceStore] Failed to kill terminal for agent switch:', err);
         }
@@ -717,7 +685,6 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => {
           }
 
           if (result.success) {
-            console.log('[WorkspaceStore] Terminal agent switched successfully:', terminalId);
             useWorkspaceStore.getState().updateTerminalStatus(terminalId, 'running');
             if (result.pid) {
               useWorkspaceStore.getState().setTerminalProcessId(terminalId, result.pid);

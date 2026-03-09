@@ -289,9 +289,8 @@ export const WorkspaceCreationModal: React.FC<WorkspaceCreationModalProps> = ({
         }
       } else if (command === 'ls' || command === 'dir') {
         // Just visual feedback - in real app would show directory contents
-        console.log('[Mock] Listing directory:', workingDir);
       } else if (command === 'pwd') {
-        console.log('[Mock] Current directory:', workingDir);
+        // Just visual feedback
       }
       
       setCommandInput('');
@@ -532,8 +531,6 @@ export const WorkspaceCreationModal: React.FC<WorkspaceCreationModalProps> = ({
               console.error('[WorkspaceCreationModal] Failed to spawn terminals:', failedTerminals);
               const errorMsg = failedTerminals[0].error || 'Không thể khởi tạo terminal';
               alert(`⚠️ Lỗi khi tạo workspace:\n\n${errorMsg}\n\nVui lòng kiểm tra thư mục làm việc và thử lại.`);
-            } else {
-              console.log('[WorkspaceCreationModal] Auto-spawned terminals for:', workspace.name);
             }
           } catch (err: any) {
             console.error('[WorkspaceCreationModal] Failed to spawn terminals:', err);

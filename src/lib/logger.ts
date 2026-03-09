@@ -30,21 +30,15 @@ class Logger {
   }
 
   debug(message: string, ...args: any[]): void {
-    if (this.shouldLog('debug')) {
-      console.debug(this.formatMessage('debug', message), ...args);
-    }
+    // No-op: debug logging disabled
   }
 
   info(message: string, ...args: any[]): void {
-    if (this.shouldLog('info')) {
-      console.info(this.formatMessage('info', message), ...args);
-    }
+    // No-op: info logging disabled
   }
 
   warn(message: string, ...args: any[]): void {
-    if (this.shouldLog('warn')) {
-      console.warn(this.formatMessage('warn', message), ...args);
-    }
+    // No-op: warn logging disabled
   }
 
   error(message: string, ...args: any[]): void {

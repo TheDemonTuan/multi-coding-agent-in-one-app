@@ -35,7 +35,6 @@ export const WorkspaceSwitcherModal: React.FC<WorkspaceSwitcherModalProps> = ({
                 key={workspace.id}
                 className={`workspace-switcher-item ${isActive ? 'active' : ''}`}
                 onClick={() => {
-                  console.log('[Modal] Workspace clicked:', workspace.name);
                   onSelectWorkspace(workspace.id);
                 }}
               >

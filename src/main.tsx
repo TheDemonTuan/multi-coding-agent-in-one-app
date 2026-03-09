@@ -3,11 +3,8 @@ import ReactDOM from 'react-dom/client';
 import App from './App';
 import './index.css';
 
-console.log('[Renderer] Starting React app...');
-
 // Check if root element exists
 const rootElement = document.getElementById('root');
-console.log('[Renderer] Root element:', rootElement);
 
 if (!rootElement) {
   console.error('[Renderer] Root element not found!');
@@ -15,16 +12,13 @@ if (!rootElement) {
 } else {
   try {
     const root = ReactDOM.createRoot(rootElement);
-    console.log('[Renderer] React root created, rendering App...');
-    
+
     root.render(
       <>
         <App />
       </>
     );
-    
-    console.log('[Renderer] App rendered successfully');
-    
+
     // Global error boundary
     window.onerror = (message, source, lineno, colno, error) => {
       console.error('[Renderer] Global error:', message, error);

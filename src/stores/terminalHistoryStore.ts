@@ -24,21 +24,16 @@ export const useTerminalHistoryStore = create<TerminalHistoryState>((set, get) =
 
   loadHistory: async () => {
     if (typeof window === 'undefined' || !(window as any).electronAPI) {
-      console.log('[TerminalHistoryStore] electronAPI not available');
       return;
     }
 
     set({ isLoading: true });
 
     try {
-      // Load all terminal history
-      // Note: This is a simplified approach - in production you might want to
-      // store history per workspace or use a different strategy
       const stored = await (window as any).electronAPI.getStoreValue(COMMAND_HISTORY_STORAGE_KEY);
 
       if (stored) {
         set({ commandBlocks: stored });
-        console.log('[TerminalHistoryStore] Loaded history');
       }
     } catch (err) {
       console.error('[TerminalHistoryStore] Failed to load history:', err);
@@ -49,7 +44,6 @@ export const useTerminalHistoryStore = create<TerminalHistoryState>((set, get) =
 
   saveHistory: async (terminalId, blocks) => {
     if (typeof window === 'undefined' || !(window as any).electronAPI) {
-      console.log('[TerminalHistoryStore] electronAPI not available, cannot save');
       return;
     }
 
@@ -59,7 +53,6 @@ export const useTerminalHistoryStore = create<TerminalHistoryState>((set, get) =
     try {
       await (window as any).electronAPI.setStoreValue(COMMAND_HISTORY_STORAGE_KEY, updatedHistory);
       set({ commandBlocks: updatedHistory });
-      console.log('[TerminalHistoryStore] Saved history for terminal:', terminalId);
     } catch (err) {
       console.error('[TerminalHistoryStore] Failed to save history:', err);
     }
@@ -105,7 +98,6 @@ export const useTerminalHistoryStore = create<TerminalHistoryState>((set, get) =
 
   clearHistory: async (terminalId) => {
     if (typeof window === 'undefined' || !(window as any).electronAPI) {
-      console.log('[TerminalHistoryStore] electronAPI not available, cannot clear');
       return;
     }
 
@@ -116,7 +108,6 @@ export const useTerminalHistoryStore = create<TerminalHistoryState>((set, get) =
 
     try {
       await (window as any).electronAPI.setStoreValue(COMMAND_HISTORY_STORAGE_KEY, get().commandBlocks);
-      console.log('[TerminalHistoryStore] Cleared history for terminal:', terminalId);
     } catch (err) {
       console.error('[TerminalHistoryStore] Failed to clear history:', err);
     }
@@ -127,7 +118,6 @@ export const useTerminalHistoryStore = create<TerminalHistoryState>((set, get) =
       const { [terminalId]: _, ...rest } = state.commandBlocks;
       return { commandBlocks: rest };
     });
-    console.log('[TerminalHistoryStore] Removed history for terminal:', terminalId);
   },
 
   getHistory: (terminalId) => {

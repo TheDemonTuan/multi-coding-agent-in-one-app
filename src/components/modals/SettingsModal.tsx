@@ -65,12 +65,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
   useEffect(() => {
     if (isOpen && typeof window !== 'undefined' && (window as any).electronAPI) {
       (window as any).electronAPI.getVietnameseImeSettings().then((vn: VietnameseImeSettings) => {
-        console.log('[SettingsModal] Loaded VN IME settings:', vn);
         setVietnameseImeSettings(vn || defaultVietnameseImeSettings);
       }).catch((err: any) => console.error('[SettingsModal] Failed to load VN IME settings:', err));
-      
+
       (window as any).electronAPI.checkVietnameseImePatchStatus().then((status: any) => {
-        console.log('[SettingsModal] VN IME patch status:', status);
         setPatchStatus(status);
       }).catch((err: any) => {
         console.error('[SettingsModal] Failed to check VN IME patch status:', err);
