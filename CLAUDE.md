@@ -102,7 +102,17 @@ bun run dev              # Start Vite dev server (React + Electron)
 bun run build            # Build React app and Electron main process
 bun run electron:start   # Run Electron app in development mode
 bun run electron:build   # Build and package production app
-bun run package          # Package app with ASAR bundling
+bun run electron:build:mac  # Build for macOS (DMG + ZIP)
+bun run package:linux    # Build for Linux (AppImage, deb)
+bun run package          # Package app with ASAR bundling (Windows)
+```
+
+### Testing
+
+```bash
+# Test files are excluded from TypeScript build (tsconfig.json)
+# Test runner: Check for vitest/jest configuration
+# Test files: **/*.test.ts, **/*.spec.ts
 ```
 
 ## Architecture
@@ -156,8 +166,10 @@ src/
 │   ├── useCommandHistory.ts
 │   └── index.ts
 ├── lib/                     # Low-level utilities
-│   ├── logger.ts            # Centralized logging (debug/info/warn/error)
+│   ├── logger.ts            # Centralized logging (error only; debug/info/warn are no-ops)
 │   ├── debounce.ts          # Debounce helper
+│   ├── memoryMonitor.ts     # Memory monitoring utility
+│   ├── osc133Parser.ts      # Terminal escape sequence parser
 │   ├── platform.ts          # Platform detection
 │   └── index.ts
 ├── services/                # Business logic layer (renderer-side)
@@ -260,13 +272,42 @@ src/
 - Custom plugin copies `preload.cjs` directly (bypasses Vite transform)
 - Electron main process: CJS format, outputs to `dist-electron/main/`
 - React renderer: ESM, outputs to `dist/`
+- Base path: `./` for Electron compatibility
 
-**package.js**:
+**package.js** (Windows):
 - ASAR bundling for production
 - Unpacks `node-pty` and `@xterm` (native modules)
 - Outputs to `release/win-unpacked-<timestamp>/`
+- Creates junction link to `release/win-unpacked/`
+
+**package.js** (macOS/Linux):
+- Delegates to electron-builder
+- macOS: DMG + ZIP (x64 + arm64)
+- Linux: AppImage + deb
 
 ### Platform Notes
-- Windows-only (Shell: PowerShell with `-NoLogo -NoExit`)
-- GPU features disabled for compatibility
+
+**Multi-platform support**:
+- **Windows**: Primary platform (Shell: PowerShell with `-NoLogo -NoExit`)
+- **macOS**: Supported (Shell: zsh/bash, DMG/ZIP builds via electron-builder)
+- **Linux**: Supported (Shell: bash, AppImage/deb builds via electron-builder)
+
+**Other**:
+- GPU acceleration enabled for xterm.js WebGL rendering
 - Vietnamese IME patch system for Claude Code CLI
+- GL flag: `--use-gl=angle` with `--use-angle=d3d11` on Windows
+
+### Additional Configuration
+
+**Logger Behavior** (`lib/logger.ts`):
+- Only `error` level is active (outputs to console.error)
+- `debug`, `info`, `warn` are no-ops (disabled in production)
+
+**Storage Keys** (`config/constants.ts`):
+- `workspaces` - Workspace layouts and configurations
+- Other keys defined in constants file
+
+**TypeScript** (`tsconfig.json`):
+- Test files excluded from build: `**/*.test.ts`, `**/*.spec.ts`
+- Path alias: `@/*` → `src/*`
+- Strict mode enabled
