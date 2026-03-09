@@ -106,7 +106,6 @@ export const TerminalContextMenu: React.FC<TerminalContextMenuProps> = ({
   currentAgentType,
 }) => {
   const menuRef = useRef<HTMLDivElement>(null);
-  const submenuTriggerRefs = useRef<(HTMLButtonElement | null)[]>([]);
   const [hoveredIndex, setHoveredIndex] = React.useState<number | string | null>(null);
   const [activeSubmenu, setActiveSubmenu] = React.useState<string | null>(null);
   const [submenuPosition, setSubmenuPosition] = React.useState({ x: 0, y: 0 });
@@ -148,27 +147,27 @@ export const TerminalContextMenu: React.FC<TerminalContextMenuProps> = ({
     }
     const rect = element.getBoundingClientRect();
     const submenuWidth = 220;
-    
+
     // Calculate position relative to viewport with boundary checks
     let newX = rect.right + 4; // Small gap from parent
     let newY = rect.top;
-    
+
     // Check if submenu would go off right edge - position to left instead
     if (rect.right + submenuWidth > window.innerWidth - 8) {
       newX = rect.left - submenuWidth - 4;
     }
-    
+
     // Ensure submenu doesn't go off bottom
     const submenuMaxHeight = 400;
     if (rect.top + submenuMaxHeight > window.innerHeight - 8) {
       newY = window.innerHeight - submenuMaxHeight - 8;
     }
-    
+
     // Ensure submenu doesn't go off top
     if (newY < 8) {
       newY = 8;
     }
-    
+
     setSubmenuPosition({ x: newX, y: newY });
     setActiveSubmenu(actionId);
     setHoveredIndex(index);
@@ -178,7 +177,7 @@ export const TerminalContextMenu: React.FC<TerminalContextMenuProps> = ({
     submenuTimeoutRef.current = setTimeout(() => {
       setActiveSubmenu(null);
       setHoveredIndex(null);
-    }, 300);
+    }, 150); // Reduced from 300ms to 150ms for faster response
   };
 
   const cancelHideSubmenu = () => {
@@ -187,9 +186,6 @@ export const TerminalContextMenu: React.FC<TerminalContextMenuProps> = ({
       submenuTimeoutRef.current = null;
     }
   };
-
-  // Initialize refs array
-  submenuTriggerRefs.current = new Array(actions.length).fill(null);
 
   // Calculate menu position to keep it within viewport
   const menuWidth = 220;
@@ -227,35 +223,31 @@ export const TerminalContextMenu: React.FC<TerminalContextMenuProps> = ({
         return (
           <div key={action.id} style={{ position: 'relative' }}>
             <button
-              onClick={(e) => {
+              onClick={(e: React.MouseEvent<HTMLButtonElement>) => {
                 e.stopPropagation();
                 if (hasSubmenu) {
                   // Toggle submenu on click
-                  const element = submenuTriggerRefs.current[index];
-                  if (element && activeSubmenu === action.id) {
+                  if (activeSubmenu === action.id) {
                     setActiveSubmenu(null);
                     setHoveredIndex(null);
-                  } else if (element) {
+                  } else {
                     cancelHideSubmenu();
-                    showSubmenu(action.id, index, element);
+                    showSubmenu(action.id, index, e.currentTarget);
                   }
                 } else {
                   handleActionClick(action.id);
                 }
               }}
-              onMouseEnter={() => {
-                if (hasSubmenu) {
-                  const element = submenuTriggerRefs.current[index];
-                  if (element) {
-                    cancelHideSubmenu();
-                    showSubmenu(action.id, index, element);
-                  }
+              onMouseEnter={(e: React.MouseEvent<HTMLButtonElement>) => {
+                if (hasSubmenu && activeSubmenu !== action.id) {
+                  cancelHideSubmenu();
+                  // Use the event's currentTarget as the element for showSubmenu
+                  showSubmenu(action.id, index, e.currentTarget);
                 } else if (!(action as ContextMenuAction).disabled) {
                   setHoveredIndex(index);
                 }
               }}
               onMouseLeave={hideSubmenu}
-              ref={(el) => { submenuTriggerRefs.current[index] = el; }}
               disabled={(action as ContextMenuAction).disabled}
               style={{
                 ...styles.actionButton,
