@@ -1,4 +1,4 @@
-export type AgentType = 
+export type AgentType =
   | 'claude-code'
   | 'opencode'
   | 'droid'
@@ -90,8 +90,10 @@ export interface WorkspaceState {
   theme: 'dark' | 'light';
   isWorkspaceModalOpen: boolean;
   editingWorkspace: WorkspaceLayout | null;
+  restartingTerminals: Set<string>;
 
   // Actions
+  isTerminalRestarting: (terminalId: string) => boolean;
   setCurrentWorkspace: (workspace: WorkspaceLayout) => void;
   addWorkspace: (config: WorkspaceCreationConfig) => WorkspaceLayout;
   removeWorkspace: (id: string) => void;

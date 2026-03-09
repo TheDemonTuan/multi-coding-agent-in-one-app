@@ -126,7 +126,7 @@ export const TerminalCell = React.memo<TerminalCellProps>(({
 
   const [hasStarted, setHasStarted] = useState(false);
   const theme = useWorkspaceStore((state: any) => state.theme);
-  const { updateTerminalStatus, setTerminalProcessId, currentWorkspace } = useWorkspaceStore();
+  const { updateTerminalStatus, setTerminalProcessId, currentWorkspace, isTerminalRestarting } = useWorkspaceStore();
 
   const [unreadCount, setUnreadCount] = useState(0);
   const isScrolledUp = unreadCount > 0;
@@ -143,7 +143,7 @@ export const TerminalCell = React.memo<TerminalCellProps>(({
     x: number;
     y: number;
   }>({ visible: false, x: 0, y: 0 });
-  
+
   const [vnPatched, setVnPatched] = useState(false);
   const [spawnError, setSpawnError] = useState<string | null>(null);
   const errorToastTimersRef = useRef<NodeJS.Timeout[]>([]);
@@ -160,12 +160,12 @@ export const TerminalCell = React.memo<TerminalCellProps>(({
         }
       };
       checkPatch();
-      
+
       // Re-check when patch is applied (for auto-patch)
       const unsubscribe = window.electronAPI?.onVietnameseImePatchApplied(() => {
         setTimeout(() => checkPatch(), 1500); // Wait 1.5s for patch to complete
       });
-      
+
       return () => unsubscribe?.();
     }
   }, [terminal.agent?.type]);
@@ -470,8 +470,8 @@ export const TerminalCell = React.memo<TerminalCellProps>(({
           const { cols, rows } = terminalRef.current;
 
           if (!lastDimensionsRef.current ||
-              lastDimensionsRef.current.cols !== cols ||
-              lastDimensionsRef.current.rows !== rows) {
+            lastDimensionsRef.current.cols !== cols ||
+            lastDimensionsRef.current.rows !== rows) {
             lastDimensionsRef.current = { cols, rows };
             console.log(`[TerminalCell ${terminal.id}] Resizing terminal to ${cols}x${rows} (debounced)`);
             (window as any).electronAPI.terminalResize(terminal.id, cols, rows);
@@ -494,7 +494,7 @@ export const TerminalCell = React.memo<TerminalCellProps>(({
 
     // Setup event listeners (VAL-MEM-003)
     console.log(`[TerminalCell ${terminal.id}] Subscribing to IPC events...`);
-    
+
     listenersRef.current.unsubscribeData = (window as any).electronAPI.onTerminalData(({ id, data }: { id: string; data: string }) => {
       if (id === terminal.id && terminalRef.current) {
         // Buffer data until initial fit is complete to prevent garbled output
@@ -517,12 +517,31 @@ export const TerminalCell = React.memo<TerminalCellProps>(({
         updateTerminalStatus(terminal.id, 'running');
         setHasStarted(true);
         terminalRef.current?.focus();
+
+        // Re-sync terminal dimensions with PTY after (re)start
+        // New PTY starts with default cols/rows, but xterm may already be sized differently
+        if (terminalRef.current && fitAddonRef.current) {
+          try {
+            fitAddonRef.current.fit();
+            const { cols, rows } = terminalRef.current;
+            (window as any).electronAPI?.terminalResize(terminal.id, cols, rows);
+            console.log(`[TerminalCell ${terminal.id}] Synced PTY size after start: ${cols}x${rows}`);
+          } catch (err) {
+            console.warn(`[TerminalCell ${terminal.id}] Failed to sync size after start:`, err);
+          }
+        }
       }
     });
     console.log(`[TerminalCell ${terminal.id}] Subscribed to onTerminalStarted`);
 
     listenersRef.current.unsubscribeExit = (window as any).electronAPI.onTerminalExit(({ id, code, signal }: { id: string; code: number | null; signal?: string }) => {
       if (id === terminal.id) {
+        // Skip exit processing if terminal is restarting (prevents race condition setting status to stopped)
+        if (isTerminalRestarting(terminal.id)) {
+          console.log(`[TerminalCell ${terminal.id}] Ignoring exit event because terminal is restarting`);
+          return;
+        }
+
         const exitMessage = code !== null && code !== undefined
           ? `Terminal exited with code ${code}`
           : signal
@@ -558,7 +577,7 @@ export const TerminalCell = React.memo<TerminalCellProps>(({
     term.attachCustomKeyEventHandler((e: KeyboardEvent) => {
       // Handler is no longer registered, don't process events
       if (!customKeyHandlerRegistered) return true;
-      
+
       if (e.type !== 'keydown') return true;
 
       // Ctrl+Tab: Switch to next workspace
@@ -607,7 +626,7 @@ export const TerminalCell = React.memo<TerminalCellProps>(({
 
       return true;
     });
-    
+
     // Store cleanup function to mark handler as unregistered
     xtermDisposablesRef.current.customKeyHandlerCleanup = () => {
       customKeyHandlerRegistered = false;
@@ -875,7 +894,7 @@ export const TerminalCell = React.memo<TerminalCellProps>(({
             {terminal.title}
           </span>
           {terminal.agent?.type === 'claude-code' && vnPatched && (
-            <span style={{fontSize:'10px', marginLeft:'4px'}} title="Vietnamese IME Patched">🇻🇳</span>
+            <span style={{ fontSize: '10px', marginLeft: '4px' }} title="Vietnamese IME Patched">🇻🇳</span>
           )}
           {terminal.agent?.enabled && terminal.agent.type !== 'none' && (
             <span style={{

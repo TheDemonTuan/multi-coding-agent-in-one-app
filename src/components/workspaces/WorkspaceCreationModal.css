@@ -5,13 +5,13 @@
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.75);
-  backdrop-filter: blur(4px);
+  /* backdrop-filter removed: extremely GPU-intensive, causes severe jank without hardware GPU */
+  background: rgba(0, 0, 0, 0.82);
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 1000;
-  animation: fadeIn 0.2s ease-out;
+  animation: fadeIn 0.18s ease-out;
 }
 
 .modal-container {
@@ -24,10 +24,11 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  box-shadow: 
-    0 20px 60px rgba(0, 0, 0, 0.5),
-    0 0 0 1px rgba(137, 180, 250, 0.1);
-  animation: modalSlideIn 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  /* Simplified box-shadow: fewer layers = fewer GPU compositing steps */
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.55);
+  /* will-change promotes to compositor layer for smoother transform/opacity animation */
+  will-change: transform, opacity;
+  animation: modalSlideIn 0.25s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 /* Header with Progress Stepper */
@@ -103,7 +104,9 @@
   align-items: center;
   justify-content: center;
   font-size: 14px;
-  transition: background 0.2s, border-color 0.2s;
+  transition:
+    background 0.2s,
+    border-color 0.2s;
   position: relative;
 }
 
@@ -161,10 +164,7 @@
   min-height: 400px;
 }
 
-/* Disable expensive transitions for better performance */
-.modal-content.transitioning .step-content {
-  /* Will-change optimization handled by browser */
-}
+/* Step content transitions handled by GPU-safe opacity/transform only */
 
 /* Template Selection */
 .template-selection-step {
@@ -191,7 +191,10 @@
   border: 2px solid #45475a;
   border-radius: 12px;
   cursor: pointer;
-  transition: border-color 0.15s, transform 0.1s, box-shadow 0.15s;
+  transition:
+    border-color 0.15s,
+    transform 0.1s,
+    box-shadow 0.15s;
   gap: 12px;
 }
 
@@ -228,7 +231,9 @@
   background: linear-gradient(135deg, #45475a 0%, #585b70 100%);
   border-radius: 4px;
   border: 1px solid #6c7086;
-  transition: background 0.2s, border-color 0.2s;
+  transition:
+    background 0.2s,
+    border-color 0.2s;
 }
 
 .template-card.selected .template-cell {
@@ -344,7 +349,10 @@
   border: 2px solid #45475a;
   border-radius: 8px;
   cursor: pointer;
-  transition: background 0.15s, border-color 0.15s, transform 0.1s;
+  transition:
+    background 0.15s,
+    border-color 0.15s,
+    transform 0.1s;
 }
 
 .emoji-btn:hover {
@@ -435,7 +443,7 @@
   font-weight: 600;
   color: #a6e3a1;
   white-space: nowrap;
-  font-family: 'Cascadia Code', 'Fira Code', Consolas, monospace;
+  font-family: "Cascadia Code", "Fira Code", Consolas, monospace;
 }
 
 .terminal-input {
@@ -445,7 +453,7 @@
   outline: none;
   color: #cdd6f4;
   font-size: 14px;
-  font-family: 'Cascadia Code', 'Fira Code', Consolas, monospace;
+  font-family: "Cascadia Code", "Fira Code", Consolas, monospace;
 }
 
 .terminal-input::placeholder {
@@ -513,7 +521,7 @@
   flex: 1;
   font-size: 13px;
   color: #cdd6f4;
-  font-family: 'Cascadia Code', 'Fira Code', Consolas, monospace;
+  font-family: "Cascadia Code", "Fira Code", Consolas, monospace;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -542,7 +550,7 @@
   background: #181825;
   padding: 3px 8px;
   border-radius: 4px;
-  font-family: 'Cascadia Code', 'Fira Code', Consolas, monospace;
+  font-family: "Cascadia Code", "Fira Code", Consolas, monospace;
   border: 1px solid #313244;
 }
 
@@ -960,7 +968,9 @@
   border-radius: 8px;
   color: #cdd6f4;
   cursor: pointer;
-  transition: background 0.15s, transform 0.1s;
+  transition:
+    background 0.15s,
+    transform 0.1s;
 }
 
 .footer-btn:hover:not(:disabled) {
@@ -993,16 +1003,20 @@
   flex: 1;
 }
 
-/* Animations - Reduced for better performance */
+/* Animations - GPU-safe: only opacity + transform (compositor-only properties) */
 @keyframes fadeIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
 @keyframes modalSlideIn {
   from {
     opacity: 0;
-    transform: scale(0.97) translateY(10px);
+    transform: scale(0.96) translateY(8px);
   }
   to {
     opacity: 1;
@@ -1010,14 +1024,7 @@
   }
 }
 
-@keyframes pulse {
-  0%, 100% {
-    box-shadow: 0 0 15px rgba(137, 180, 250, 0.3);
-  }
-  50% {
-    box-shadow: 0 0 20px rgba(137, 180, 250, 0.4);
-  }
-}
+/* pulse animation removed: animating box-shadow causes full repaints on every frame */
 
 /* Removed expensive slide animations */
 

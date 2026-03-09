@@ -305,16 +305,9 @@ function App() {
         onSelectWorkspace={handleSelectWorkspace}
       />
 
-      {useWorkspaceStore(state => state.isWorkspaceModalOpen) && (
-        <WorkspaceCreationModal
-          isOpen={useWorkspaceStore.getState().isWorkspaceModalOpen}
-          onClose={() => {
-            console.log('[App] WorkspaceCreationModal onClose called');
-            setWorkspaceModalOpen(false);
-          }}
-          editingWorkspace={editingWorkspace}
-        />
-      )}
+
+      {/* WorkspaceCreationModal is rendered inside WorkspaceTabBar — do NOT duplicate here */}
+
 
       <SettingsModal
         isOpen={settingsModalOpen}

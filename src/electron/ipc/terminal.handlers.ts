@@ -11,13 +11,13 @@ import * as path from 'path';
 import { spawnSync } from 'child_process';
 import { IPC_CHANNELS, DEFAULT_TERMINAL_COLS, DEFAULT_TERMINAL_ROWS, STORAGE_KEYS } from '../../config/constants';
 import { logger } from '../../lib/logger';
-import { 
-  applyVietnameseImePatch, 
-  isVietnameseImePatched, 
+import {
+  applyVietnameseImePatch,
+  isVietnameseImePatched,
   extractClaudeVersion,
   getCurrentClaudeVersion,
   isVersionMismatched,
-  findClaudePath 
+  findClaudePath
 } from '../../utils/vietnameseImePatch';
 
 /**
@@ -31,19 +31,19 @@ function validateWorkingDirectory(cwd: string): { valid: boolean; error?: string
     }
 
     const resolvedPath = path.resolve(cwd);
-    
+
     if (!fs.existsSync(resolvedPath)) {
-      return { 
-        valid: false, 
-        error: `Thư mục không tồn tại: ${cwd}. Vui lòng chọn thư mục khác hoặc sử dụng Browse để chọn.` 
+      return {
+        valid: false,
+        error: `Thư mục không tồn tại: ${cwd}. Vui lòng chọn thư mục khác hoặc sử dụng Browse để chọn.`
       };
     }
 
     const stats = fs.statSync(resolvedPath);
     if (!stats.isDirectory()) {
-      return { 
-        valid: false, 
-        error: `Đường dẫn không phải thư mục: ${cwd}. Vui lòng chọn một thư mục hợp lệ.` 
+      return {
+        valid: false,
+        error: `Đường dẫn không phải thư mục: ${cwd}. Vui lòng chọn một thư mục hợp lệ.`
       };
     }
 
@@ -51,9 +51,9 @@ function validateWorkingDirectory(cwd: string): { valid: boolean; error?: string
     fs.readdirSync(resolvedPath);
     return { valid: true };
   } catch (err: any) {
-    return { 
-      valid: false, 
-      error: `Không thể truy cập thư mục: ${cwd}. Lỗi: ${err.message || 'Permission denied'}` 
+    return {
+      valid: false,
+      error: `Không thể truy cập thư mục: ${cwd}. Lỗi: ${err.message || 'Permission denied'}`
     };
   }
 }
@@ -120,7 +120,7 @@ let isPatching = false;
  */
 function killPtyProcess(ptyProcess: pty.IPty): boolean {
   const pid = ptyProcess.pid;
-  
+
   if (process.platform === 'win32') {
     // Windows: Use taskkill to kill entire process tree including child processes
     try {
@@ -128,23 +128,23 @@ function killPtyProcess(ptyProcess: pty.IPty): boolean {
         stdio: 'pipe',
         timeout: 5000, // 5 second timeout
       });
-      
+
       if (result.status === 0) {
         log.debug('Successfully killed process tree with taskkill', { pid });
         return true;
       } else {
-        log.warn('taskkill failed, falling back to pty.kill()', { 
-          pid, 
-          stderr: result.stderr?.toString() 
+        log.warn('taskkill failed, falling back to pty.kill()', {
+          pid,
+          stderr: result.stderr?.toString()
         });
         // Fall back to pty.kill() if taskkill fails
         ptyProcess.kill();
         return true;
       }
     } catch (err: any) {
-      log.error('taskkill error, falling back to pty.kill()', { 
-        pid, 
-        error: err.message 
+      log.error('taskkill error, falling back to pty.kill()', {
+        pid,
+        error: err.message
       });
       // Fall back to pty.kill() on error
       try {
@@ -180,12 +180,12 @@ async function autoPatchIfNeeded(store: Store, mainWindow: BrowserWindow | null)
   isPatching = true;
   try {
     const vnSettings = store.get(STORAGE_KEYS.VIETNAMESE_IME, { enabled: false, autoPatch: true }) as any;
-    
+
     // Skip if Vietnamese IME or auto-patch is disabled
     if (!vnSettings.enabled || !vnSettings.autoPatch) {
-      log.debug('Vietnamese IME or auto-patch disabled, skipping version check', { 
-        enabled: vnSettings.enabled, 
-        autoPatch: vnSettings.autoPatch 
+      log.debug('Vietnamese IME or auto-patch disabled, skipping version check', {
+        enabled: vnSettings.enabled,
+        autoPatch: vnSettings.autoPatch
       });
       return false;
     }
@@ -193,17 +193,17 @@ async function autoPatchIfNeeded(store: Store, mainWindow: BrowserWindow | null)
     // Get current Claude Code version
     const currentVersion = getCurrentClaudeVersion();
     const patchedVersion = vnSettings.patchedVersion;
-    
+
     // Log version check result before spawning Claude terminal
-    log.debug('Version check result', { 
+    log.debug('Version check result', {
       currentVersion: currentVersion || 'unknown',
       patchedVersion: patchedVersion || 'not patched',
       isPatched: !!patchedVersion
     });
-    
+
     // Check if version mismatch exists
     const hasMismatch = isVersionMismatched(currentVersion, patchedVersion);
-    
+
     if (!hasMismatch) {
       log.debug('No version mismatch detected, skipping auto-repatch', {
         currentVersion: currentVersion || 'unknown',
@@ -216,58 +216,58 @@ async function autoPatchIfNeeded(store: Store, mainWindow: BrowserWindow | null)
     log.info('=== Auto-Repatch Triggered ===');
     log.info('Version mismatch detected: old=' + (patchedVersion || 'none') + ', new=' + (currentVersion || 'unknown'));
     log.info('Starting auto-repatch process...');
-    
+
     try {
       const result = await applyVietnameseImePatch();
-      
+
       if (result.success) {
         log.info('Auto-repatch completed successfully!');
-        
+
         // Update patchedVersion in store
         if (result.version) {
-          const updatedSettings = { 
-            ...vnSettings, 
+          const updatedSettings = {
+            ...vnSettings,
             patchedVersion: result.version,
             lastPatchStatus: 'success' as const,
-            lastPatchPath: result.patchedPath 
+            lastPatchPath: result.patchedPath
           };
           store.set(STORAGE_KEYS.VIETNAMESE_IME, updatedSettings);
           log.info('patchedVersion storage update: ' + (patchedVersion || 'none') + ' → ' + result.version);
-          log.debug('Updated settings stored in electron-store', { 
+          log.debug('Updated settings stored in electron-store', {
             newPatchedVersion: result.version,
             lastPatchStatus: 'success',
-            lastPatchPath: result.patchedPath 
+            lastPatchPath: result.patchedPath
           });
         } else {
           log.warn('Auto-repatch succeeded but version not extracted from result');
         }
-        
+
         // Notify renderer
         if (mainWindow && !mainWindow.isDestroyed()) {
           mainWindow.webContents.send(IPC_CHANNELS.VIETNAMESE_IME_PATCH_APPLIED, result);
           log.debug('Sent vietnamese-ime-patch-applied event to renderer');
         }
-        
+
         return true;
       } else {
-        log.warn('Auto-repatch result: failed', { 
-          reason: result.message, 
-          alreadyPatched: result.alreadyPatched 
+        log.warn('Auto-repatch result: failed', {
+          reason: result.message,
+          alreadyPatched: result.alreadyPatched
         });
         return false;
       }
     } catch (err: any) {
-      log.error('Auto-repatch error occurred', { 
-        error: err.message, 
+      log.error('Auto-repatch error occurred', {
+        error: err.message,
         code: err.code,
-        stack: err.stack 
+        stack: err.stack
       });
-      
+
       // Handle file locked errors gracefully
       if (err.code === 'EBUSY') {
         log.warn('Claude Code file is locked (may be updating in background), skipping auto-patch');
       }
-      
+
       return false;
     }
   } finally {
@@ -294,16 +294,16 @@ export function initializeTerminalHandlers(mainWindow: BrowserWindow | null, sto
     const validation = validateWorkingDirectory(cwd || process.cwd());
     if (!validation.valid) {
       log.error('Working directory validation failed', { id, cwd, error: validation.error });
-      
+
       // Send error event to renderer
       if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.webContents.send(IPC_CHANNELS.TERMINAL_ERROR, { 
-          id, 
+        mainWindow.webContents.send(IPC_CHANNELS.TERMINAL_ERROR, {
+          id,
           error: validation.error,
           type: 'spawn_failed'
         });
       }
-      
+
       return { success: false, error: validation.error };
     }
 
@@ -344,6 +344,14 @@ export function initializeTerminalHandlers(mainWindow: BrowserWindow | null, sto
       });
 
       ptyProcess.onExit(({ exitCode, signal }) => {
+        // Check if this PTY is still the current one for this terminal ID
+        // If it's been replaced (e.g., during restart), skip cleanup and exit event
+        const currentTerm = terminalProcesses.get(id);
+        if (currentTerm && currentTerm.ptyProcess !== ptyProcess) {
+          log.info('Terminal exit ignored (process was replaced by restart)', { id, exitCode });
+          return;
+        }
+
         log.info('Terminal exited', { id, exitCode, signal });
         if (mainWindow && !mainWindow.isDestroyed()) {
           mainWindow.webContents.send(IPC_CHANNELS.TERMINAL_EXIT, { id, code: exitCode, signal });
@@ -469,16 +477,16 @@ export function initializeTerminalHandlers(mainWindow: BrowserWindow | null, sto
     const validation = validateWorkingDirectory(cwd || process.cwd());
     if (!validation.valid) {
       log.error('Working directory validation failed', { id, cwd, error: validation.error });
-      
+
       // Send error event to renderer
       if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.webContents.send(IPC_CHANNELS.TERMINAL_ERROR, { 
-          id, 
+        mainWindow.webContents.send(IPC_CHANNELS.TERMINAL_ERROR, {
+          id,
           error: validation.error,
           type: 'spawn_failed'
         });
       }
-      
+
       return { success: false, error: validation.error };
     }
 
@@ -559,6 +567,14 @@ export function initializeTerminalHandlers(mainWindow: BrowserWindow | null, sto
       });
 
       ptyProcess.onExit(({ exitCode, signal }) => {
+        // Check if this PTY is still the current one for this terminal ID
+        // If it's been replaced (e.g., during restart), skip cleanup and exit event
+        const currentTerm = terminalProcesses.get(id);
+        if (currentTerm && currentTerm.ptyProcess !== ptyProcess) {
+          log.info('Terminal with agent exit ignored (process was replaced by restart)', { id, exitCode });
+          return;
+        }
+
         log.info('Terminal with agent exited', { id, exitCode, signal });
         if (mainWindow && !mainWindow.isDestroyed()) {
           mainWindow.webContents.send(IPC_CHANNELS.TERMINAL_EXIT, { id, code: exitCode, signal });

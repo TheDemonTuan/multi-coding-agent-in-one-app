@@ -44,8 +44,8 @@ const createDefaultWorkspace = (config: WorkspaceCreationConfig): WorkspaceLayou
     const fallbackKey = `terminal-${i}`;
 
     const agentConfig = config.agentAssignments?.[agentKey] ||
-                        config.agentAssignments?.[fallbackKey] ||
-                        { type: 'none', enabled: false };
+      config.agentAssignments?.[fallbackKey] ||
+      { type: 'none', enabled: false };
 
     terminals.push({
       id: terminalId,
@@ -107,11 +107,14 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => {
     activeTerminalId: null,
     theme: 'dark' as const,
     isWorkspaceModalOpen: false,
+    restartingTerminals: new Set<string>(),
   };
 
   return {
     ...initialState,
     editingWorkspace: null,
+
+    isTerminalRestarting: (terminalId) => get().restartingTerminals.has(terminalId),
 
     loadWorkspaces: () => {
       if (typeof window === 'undefined' || !(window as any).electronAPI) {
@@ -298,9 +301,9 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => {
 
     setWorkspaceModalOpenWithEdit: (workspace) => {
       console.log('[WorkspaceStore] Opening modal for edit:', workspace.name);
-      set({ 
+      set({
         editingWorkspace: workspace,
-        isWorkspaceModalOpen: true 
+        isWorkspaceModalOpen: true
       });
     },
 
@@ -416,12 +419,12 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => {
 
       // Clean up terminal history to prevent memory leaks
       useTerminalHistoryStore.getState().removeTerminalHistory(terminalId);
-      
+
       // Calculate new grid dimensions
       const totalTerminals = updatedTerminals.length;
       let newColumns = state.currentWorkspace.columns;
       let newRows = state.currentWorkspace.rows;
-      
+
       // Try to maintain aspect ratio, prefer wider layouts
       const aspectRatio = newColumns / newRows;
       newRows = Math.ceil(Math.sqrt(totalTerminals / aspectRatio));
@@ -473,7 +476,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => {
 
       const terminals = state.currentWorkspace.terminals;
       const terminalIndex = terminals.findIndex(t => t.id === terminalId);
-      
+
       if (terminalIndex === -1) return;
 
       // Create new terminal with same config
@@ -591,6 +594,13 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => {
 
       console.log('[WorkspaceStore] Restarting terminal:', terminalId);
 
+      // Add to restarting set to suppress exit events
+      set((state) => {
+        const newSet = new Set(state.restartingTerminals);
+        newSet.add(terminalId);
+        return { restartingTerminals: newSet };
+      });
+
       // Kill existing terminal process
       if (typeof window !== 'undefined' && (window as any).electronAPI) {
         try {
@@ -634,6 +644,15 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => {
         } catch (err) {
           console.error('[WorkspaceStore] Failed to restart terminal:', err);
           useWorkspaceStore.getState().updateTerminalStatus(terminalId, 'error');
+        } finally {
+          // Delay removing from restarting set to catch any late-arriving exit events from old PTY
+          setTimeout(() => {
+            set((state) => {
+              const newSet = new Set(state.restartingTerminals);
+              newSet.delete(terminalId);
+              return { restartingTerminals: newSet };
+            });
+          }, 500);
         }
       }
     },
@@ -654,6 +673,13 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => {
 
       // Update agent config in store
       useWorkspaceStore.getState().updateTerminalAgent(terminalId, agentConfig);
+
+      // Add to restarting set to suppress exit events during switch
+      set((state) => {
+        const newSet = new Set(state.restartingTerminals);
+        newSet.add(terminalId);
+        return { restartingTerminals: newSet };
+      });
 
       // Kill existing terminal process
       if (typeof window !== 'undefined' && (window as any).electronAPI) {
@@ -698,6 +724,15 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => {
         } catch (err) {
           console.error('[WorkspaceStore] Failed to switch terminal agent:', err);
           useWorkspaceStore.getState().updateTerminalStatus(terminalId, 'error');
+        } finally {
+          // Delay removing from restarting set to catch late-arriving exit events
+          setTimeout(() => {
+            set((state) => {
+              const newSet = new Set(state.restartingTerminals);
+              newSet.delete(terminalId);
+              return { restartingTerminals: newSet };
+            });
+          }, 500);
         }
       }
     },

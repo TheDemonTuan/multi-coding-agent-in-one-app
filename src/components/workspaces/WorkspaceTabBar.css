@@ -6,7 +6,7 @@
 .workspace-tab-bar {
   display: flex;
   align-items: center;
-  background: linear-gradient(180deg, rgba(30, 30, 46, 0.95) 0%, rgba(24, 24, 37, 0.98) 100%);
+  background: linear-gradient(180deg, rgba(30, 30, 46, 0.98) 0%, rgba(24, 24, 37, 1) 100%);
   border-bottom: 1px solid rgba(49, 50, 68, 0.8);
   padding: 0 12px;
   overflow-x: auto;
@@ -14,7 +14,7 @@
   height: 48px;
   min-height: 48px;
   gap: 8px;
-  backdrop-filter: blur(12px);
+  /* backdrop-filter removed: GPU-intensive, especially harmful when always-on-screen */
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
 }
 
@@ -69,7 +69,7 @@
 }
 
 .add-workspace-tab::before {
-  content: '';
+  content: "";
   position: absolute;
   inset: 0;
   background: linear-gradient(135deg, rgba(137, 180, 250, 0.15) 0%, rgba(180, 190, 254, 0.15) 100%);
@@ -130,7 +130,7 @@
 }
 
 .workspace-tab::before {
-  content: '';
+  content: "";
   position: absolute;
   top: 0;
   left: 0;
@@ -141,7 +141,7 @@
 }
 
 .workspace-tab::after {
-  content: '';
+  content: "";
   position: absolute;
   inset: 0;
   background: linear-gradient(135deg, rgba(137, 180, 250, 0.03) 0%, rgba(180, 190, 254, 0.03) 100%);
@@ -164,7 +164,7 @@
 .workspace-tab.active {
   background: rgba(69, 71, 90, 0.5);
   border-color: rgba(49, 50, 68, 0.8);
-  box-shadow: 
+  box-shadow:
     0 4px 16px rgba(0, 0, 0, 0.3),
     inset 0 1px 0 rgba(255, 255, 255, 0.05);
 }
@@ -255,7 +255,7 @@
   font-size: 11px;
   font-weight: 700;
   color: #1e1e2e;
-  box-shadow: 
+  box-shadow:
     0 2px 4px rgba(137, 180, 250, 0.3),
     inset 0 1px 0 rgba(255, 255, 255, 0.2);
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
@@ -264,22 +264,27 @@
 
 .workspace-tab:hover .terminal-badge {
   transform: scale(1.05);
-  box-shadow: 
+  box-shadow:
     0 3px 6px rgba(137, 180, 250, 0.4),
     inset 0 1px 0 rgba(255, 255, 255, 0.3);
 }
 
 .workspace-tab.active .terminal-badge {
   background: linear-gradient(135deg, #b4befe 0%, #89b4fa 100%);
-  box-shadow: 
+  box-shadow:
     0 2px 6px rgba(137, 180, 250, 0.5),
     inset 0 1px 0 rgba(255, 255, 255, 0.4);
   animation: badgePulse 2s ease-in-out infinite;
 }
 
 @keyframes badgePulse {
-  0%, 100% { transform: scale(1); }
-  50% { transform: scale(1.05); }
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.05);
+  }
 }
 
 /* ============================================
@@ -382,7 +387,7 @@
 }
 
 .action-btn::before {
-  content: '';
+  content: "";
   position: absolute;
   inset: 0;
   background: linear-gradient(135deg, rgba(255, 255, 255, 0.05) 0%, rgba(255, 255, 255, 0) 100%);
@@ -467,13 +472,10 @@
   border-radius: 12px;
   padding: 8px;
   min-width: 180px;
-  box-shadow: 
-    0 8px 32px rgba(0, 0, 0, 0.6),
-    0 4px 16px rgba(0, 0, 0, 0.4),
-    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
   z-index: 10000;
-  backdrop-filter: blur(16px);
-  animation: contextMenuSlide 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+  /* backdrop-filter removed: GPU-intensive */
+  animation: contextMenuSlide 0.15s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 @keyframes contextMenuSlide {
@@ -503,7 +505,7 @@
 }
 
 .context-menu-item::before {
-  content: '';
+  content: "";
   position: absolute;
   inset: 0;
   background: linear-gradient(135deg, rgba(137, 180, 250, 0.08) 0%, rgba(180, 190, 254, 0.08) 100%);
@@ -567,23 +569,21 @@
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.7);
+  /* backdrop-filter removed: GPU-intensive, causes severe jank */
+  background: rgba(0, 0, 0, 0.82);
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 100000;
-  animation: overlayFadeIn 0.2s ease;
-  backdrop-filter: blur(4px);
+  animation: overlayFadeIn 0.15s ease;
 }
 
 @keyframes overlayFadeIn {
   from {
     opacity: 0;
-    backdrop-filter: blur(0);
   }
   to {
     opacity: 1;
-    backdrop-filter: blur(4px);
   }
 }
 
@@ -599,7 +599,7 @@
   min-width: 420px;
   max-width: 500px;
   text-align: center;
-  box-shadow: 
+  box-shadow:
     0 24px 80px rgba(0, 0, 0, 0.6),
     0 8px 32px rgba(0, 0, 0, 0.4),
     inset 0 1px 0 rgba(255, 255, 255, 0.05);
@@ -620,13 +620,12 @@
 }
 
 @keyframes iconPulse {
-  0%, 100% { 
-    box-shadow: 0 0 0 0 rgba(243, 139, 168, 0.4);
+  0%,
+  100% {
     transform: scale(1);
   }
-  50% { 
-    box-shadow: 0 0 0 12px rgba(243, 139, 168, 0);
-    transform: scale(1.02);
+  50% {
+    transform: scale(1.03);
   }
 }
 
@@ -678,7 +677,7 @@
 .btn-cancel::before,
 .btn-delete::before,
 .btn-rename::before {
-  content: '';
+  content: "";
   position: absolute;
   inset: 0;
   background: linear-gradient(135deg, rgba(255, 255, 255, 0.1) 0%, rgba(255, 255, 255, 0) 100%);
@@ -749,7 +748,7 @@
   min-width: 420px;
   max-width: 500px;
   text-align: center;
-  box-shadow: 
+  box-shadow:
     0 24px 80px rgba(0, 0, 0, 0.6),
     0 8px 32px rgba(0, 0, 0, 0.4),
     inset 0 1px 0 rgba(255, 255, 255, 0.05);
@@ -770,10 +769,18 @@
 }
 
 @keyframes iconBounce {
-  0% { transform: scale(0) rotate(-180deg); }
-  50% { transform: scale(1.2) rotate(10deg); }
-  70% { transform: scale(0.9) rotate(-5deg); }
-  100% { transform: scale(1) rotate(0); }
+  0% {
+    transform: scale(0) rotate(-180deg);
+  }
+  50% {
+    transform: scale(1.2) rotate(10deg);
+  }
+  70% {
+    transform: scale(0.9) rotate(-5deg);
+  }
+  100% {
+    transform: scale(1) rotate(0);
+  }
 }
 
 .rename-modal-title {
@@ -806,7 +813,7 @@
 .rename-input:focus {
   border-color: rgba(137, 180, 250, 0.8);
   background: rgba(24, 24, 37, 1);
-  box-shadow: 
+  box-shadow:
     0 0 0 3px rgba(137, 180, 250, 0.1),
     0 4px 12px rgba(0, 0, 0, 0.2);
 }
@@ -837,11 +844,11 @@
     min-width: 130px;
     padding: 8px 10px;
   }
-  
+
   .tab-name {
     font-size: 12px;
   }
-  
+
   .terminal-badge {
     min-width: 18px;
     height: 18px;
@@ -855,73 +862,73 @@
     height: 44px;
     min-height: 44px;
   }
-  
+
   .workspace-tab {
     min-width: 110px;
     max-width: 160px;
     padding: 6px 8px;
     gap: 6px;
   }
-  
+
   .tab-icon {
     font-size: 14px;
     width: 18px;
     height: 18px;
   }
-  
+
   .tab-name {
     font-size: 11px;
   }
-  
+
   .terminal-badge {
     min-width: 16px;
     height: 16px;
     font-size: 9px;
     padding: 0 4px;
   }
-  
+
   .tab-close-btn {
     width: 18px;
     height: 18px;
     font-size: 16px;
     opacity: 1;
   }
-  
+
   .total-count-badge {
     padding: 4px 8px;
     margin-right: 6px;
   }
-  
+
   .total-count-icon,
   .total-count-number {
     font-size: 11px;
   }
-  
+
   .action-btn {
     width: 28px;
     height: 28px;
   }
-  
+
   .tab-actions {
     padding-left: 8px;
     margin-left: 6px;
   }
-  
+
   .delete-modal,
   .rename-modal {
     min-width: 90%;
     padding: 24px;
   }
-  
+
   .delete-modal-icon-wrapper {
     width: 60px;
     height: 60px;
   }
-  
+
   .delete-modal-icon {
     font-size: 32px;
   }
-  
+
   .delete-modal-title,
   .rename-modal-title {
     font-size: 18px;
@@ -933,15 +940,15 @@
     min-width: 90px;
     max-width: 120px;
   }
-  
+
   .tab-name {
     font-size: 10px;
   }
-  
+
   .terminal-badge {
     display: none;
   }
-  
+
   .total-count-badge {
     display: none;
   }
@@ -959,15 +966,15 @@
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
   }
-  
+
   .workspace-tab.active .terminal-badge {
     animation: none;
   }
-  
+
   .delete-modal-icon-wrapper {
     animation: none;
   }
-  
+
   .rename-modal-icon {
     animation: none;
   }

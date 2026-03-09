@@ -12,15 +12,13 @@ const log = logger.child('[Main]');
 // Initialize electron-store
 const store = new Store();
 
-// Disable ALL GPU features BEFORE app ready
+// GPU config: disable hardware GPU (fails on this system) but use SwiftShader software renderer
+// for smooth CSS animations. DO NOT disable software-rasterizer or direct-composition — that
+// would leave Chromium with no viable renderer causing severe animation jank.
 app.commandLine.appendSwitch('disable-gpu');
-app.commandLine.appendSwitch('disable-software-rasterizer');
-app.commandLine.appendSwitch('disable-gpu-compositing');
-app.commandLine.appendSwitch('disable-gpu-rasterization');
 app.commandLine.appendSwitch('disable-gpu-sandbox');
-app.commandLine.appendSwitch('disable-gl-drawing-for-tests');
-app.commandLine.appendSwitch('use-gl', 'disabled');
-app.commandLine.appendSwitch('disable-direct-composition');
+app.commandLine.appendSwitch('use-gl', 'angle');
+app.commandLine.appendSwitch('use-angle', 'swiftshader');
 app.commandLine.appendSwitch('disable-features', 'TranslateUI,MediaRouter,OptimizationHints');
 
 let mainWindow: BrowserWindow | null = null;
@@ -111,7 +109,7 @@ function createWindow() {
       nodeIntegration: false,
       contextIsolation: true,
       preload: path.join(__dirname, '../preload/preload.cjs'),
-      webgl: true,
+      webgl: false,       // disabled: hardware GPU is off, webgl would conflict
       experimentalFeatures: false,
       devTools: true,
     },
