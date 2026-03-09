@@ -16,7 +16,8 @@ export const MIN_WINDOW_HEIGHT = 600;
 export const DEFAULT_TERMINAL_COLS = 80;
 export const DEFAULT_TERMINAL_ROWS = 24;
 export const DEFAULT_SHELL_WINDOWS = 'powershell.exe';
-export const DEFAULT_SHELL_UNIX = 'bash';
+export const DEFAULT_SHELL_MACOS = '/bin/zsh';
+export const DEFAULT_SHELL_LINUX = '/bin/bash';
 
 // Grid layout limits
 export const MAX_COLUMNS = 4;
@@ -60,28 +61,28 @@ export const IPC_CHANNELS = {
   TERMINAL_DATA: 'terminal-data',
   TERMINAL_EXIT: 'terminal-exit',
   TERMINAL_ERROR: 'terminal-error',
-  
+
   // Workspace
   GET_WORKSPACES: 'get-workspaces',
   CREATE_WORKSPACE: 'create-workspace',
   DELETE_WORKSPACE: 'delete-workspace',
   SWITCH_WORKSPACE: 'switch-workspace',
   VALIDATE_PATCH_FOR_WORKSPACE: 'validate-patch-for-workspace',
-  
+
   // Store
   GET_STORE_VALUE: 'get-store-value',
   SET_STORE_VALUE: 'set-store-value',
-  
+
   // Template
   GET_TEMPLATES: 'get-templates',
   SAVE_TEMPLATE: 'save-template',
   DELETE_TEMPLATE: 'delete-template',
-  
+
   // Window
   WINDOW_MINIMIZE: 'window-minimize',
   WINDOW_MAXIMIZE: 'window-maximize',
   WINDOW_CLOSE: 'window-close',
-  
+
   // Vietnamese IME
   APPLY_VIETNAMESE_IME_PATCH: 'apply-vietnamese-ime-patch',
   CHECK_VIETNAMESE_IME_PATCH_STATUS: 'check-vietnamese-ime-patch-status',
@@ -91,17 +92,17 @@ export const IPC_CHANNELS = {
   SET_VIETNAMESE_IME_SETTINGS: 'set-vietnamese-ime-settings',
   RESTART_CLAUDE_TERMINALS: 'restart-claude-terminals',
   VIETNAMESE_IME_PATCH_APPLIED: 'vietnamese-ime-patch-applied',
-  
+
   // Terminal history
   GET_TERMINAL_HISTORY: 'get-terminal-history',
   SAVE_TERMINAL_HISTORY: 'save-terminal-history',
   CLEAR_TERMINAL_HISTORY: 'clear-terminal-history',
-  
+
   // System
   GET_APP_VERSION: 'get-app-version',
   GET_PLATFORM: 'get-platform',
   GET_CWD: 'get-cwd',
-  
+
   // Dialog
   SHOW_OPEN_DIALOG: 'show-open-dialog',
 } as const;

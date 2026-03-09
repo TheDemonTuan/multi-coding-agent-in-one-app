@@ -4,69 +4,120 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version number (e.g., 0.1.0)'
+        description: "Version number (e.g., 0.1.0)"
         required: true
-        default: '0.1.0'
+        default: "0.1.0"
       draft:
-        description: 'Create as draft release'
+        description: "Create as draft release"
         required: false
-        default: 'false'
+        default: "false"
         type: boolean
 
 jobs:
-  build-and-release:
-    runs-on: windows-latest
-    
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            platform: win
+            artifact-suffix: win
+            archive-cmd: 'bun x cross-zip release\win-unpacked TDT-Space-v${{ github.event.inputs.version }}-win.zip'
+          - os: macos-latest
+            platform: mac
+            artifact-suffix: mac
+            archive-cmd: "cd release && zip -r ../TDT-Space-v${{ github.event.inputs.version }}-mac.zip *.dmg"
+
+    runs-on: ${{ matrix.os }}
+
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      
+
       - name: Setup Bun
         uses: oven-sh/setup-bun@v1
         with:
           bun-version: latest
-      
-      - name: Setup GitHub CLI
-        run: |
-          choco install gh -y
-          gh auth setup-git
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      
+
       - name: Install Dependencies
         run: bun install
-      
-      - name: Build Application
+
+      - name: Build Application (Windows)
+        if: matrix.platform == 'win'
         run: bun run electron:build
-      
-      - name: Create ZIP Archive
+
+      - name: Build Application (macOS)
+        if: matrix.platform == 'mac'
+        run: bun run electron:build:mac
+
+      - name: Create Archive (Windows)
+        if: matrix.platform == 'win'
+        shell: pwsh
         run: |
-          powershell -Command "Compress-Archive -Path release\win-unpacked\* -DestinationPath TDT-Space-v${{ github.event.inputs.version }}-win.zip -Force"
-      
+          Compress-Archive -Path release\win-unpacked\* -DestinationPath TDT-Space-v${{ github.event.inputs.version }}-win.zip -Force
+
+      - name: Create Archive (macOS)
+        if: matrix.platform == 'mac'
+        run: |
+          ls release/
+          DMG_FILE=$(find release -name "*.dmg" | head -n 1)
+          if [ -n "$DMG_FILE" ]; then
+            cp "$DMG_FILE" "TDT-Space-v${{ github.event.inputs.version }}-mac.dmg"
+          fi
+          # Also zip any .app bundles
+          ZIP_FILE=$(find release -name "*.zip" | head -n 1)
+          if [ -n "$ZIP_FILE" ]; then
+            cp "$ZIP_FILE" "TDT-Space-v${{ github.event.inputs.version }}-mac.zip"
+          fi
+
+      - name: Upload Build Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: TDT-Space-v${{ github.event.inputs.version }}-${{ matrix.artifact-suffix }}
+          path: TDT-Space-v${{ github.event.inputs.version }}-${{ matrix.artifact-suffix }}.*
+          retention-days: 7
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
       - name: Configure Git
         run: |
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
-      
+
       - name: Create and Push Tag
         run: |
           git tag -a v${{ github.event.inputs.version }} -m "Release v${{ github.event.inputs.version }}"
           git push origin v${{ github.event.inputs.version }}
-      
+
+      - name: Download All Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts/
+
       - name: Create Release
-        run: |
-          $draftFlag = "${{ github.event.inputs.draft }}" -eq "true" ? "--draft" : ""
-          gh release create v${{ github.event.inputs.version }} `
-            --title "TDT Space v${{ github.event.inputs.version }}" `
-            --generate-notes `
-            $draftFlag `
-            TDT-Space-v${{ github.event.inputs.version }}-win.zip
-        shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      
-      - name: Upload Release Asset
-        if: github.event.inputs.draft != 'true'
         run: |
-          Write-Host "Release published successfully!"
+          DRAFT_FLAG=""
+          if [ "${{ github.event.inputs.draft }}" = "true" ]; then
+            DRAFT_FLAG="--draft"
+          fi
+
+          # Find all release artifacts
+          ARTIFACTS=$(find artifacts/ -type f \( -name "*.zip" -o -name "*.dmg" \) | tr '\n' ' ')
+
+          gh release create v${{ github.event.inputs.version }} \
+            --title "TDT Space v${{ github.event.inputs.version }}" \
+            --generate-notes \
+            $DRAFT_FLAG \
+            $ARTIFACTS
+
+          echo "✅ Release v${{ github.event.inputs.version }} created with Windows + macOS builds!"

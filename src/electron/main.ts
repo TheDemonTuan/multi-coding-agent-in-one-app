@@ -12,13 +12,12 @@ const log = logger.child('[Main]');
 // Initialize electron-store
 const store = new Store();
 
-// GPU config: disable hardware GPU (fails on this system) but use SwiftShader software renderer
-// for smooth CSS animations. DO NOT disable software-rasterizer or direct-composition — that
-// would leave Chromium with no viable renderer causing severe animation jank.
-app.commandLine.appendSwitch('disable-gpu');
-app.commandLine.appendSwitch('disable-gpu-sandbox');
-app.commandLine.appendSwitch('use-gl', 'angle');
-app.commandLine.appendSwitch('use-angle', 'swiftshader');
+// Enable GPU acceleration for WebGL rendering in xterm.js (~900% faster than Canvas).
+// Use ANGLE on Windows for best compatibility with most GPU drivers.
+if (process.platform === 'win32') {
+  app.commandLine.appendSwitch('use-gl', 'angle');
+  app.commandLine.appendSwitch('use-angle', 'd3d11'); // D3D11 is the most compatible on Windows
+}
 app.commandLine.appendSwitch('disable-features', 'TranslateUI,MediaRouter,OptimizationHints');
 
 let mainWindow: BrowserWindow | null = null;
@@ -102,14 +101,17 @@ function createWindow() {
     height: 900,
     minWidth: 800,
     minHeight: 600,
-    frame: false,
+    // macOS: use native titlebar with traffic lights; Windows/Linux: frameless with custom titlebar
+    frame: process.platform === 'darwin',
+    titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : undefined,
+    trafficLightPosition: process.platform === 'darwin' ? { x: 12, y: 14 } : undefined,
     backgroundColor: '#1e1e2e',
     show: false,
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
       preload: path.join(__dirname, '../preload/preload.cjs'),
-      webgl: false,       // disabled: hardware GPU is off, webgl would conflict
+      webgl: true,        // enabled: allows xterm.js WebGL addon (GPU-accelerated rendering)
       experimentalFeatures: false,
       devTools: true,
     },

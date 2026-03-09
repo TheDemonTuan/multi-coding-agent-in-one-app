@@ -13,8 +13,11 @@
     "preview": "vite preview",
     "electron:start": "cross-env ELECTRON_IS_DEV=0 electron .",
     "electron:build": "bun run build && bun run package",
+    "electron:build:mac": "bun run build && bun run package:mac",
     "electron:only": "electron .",
     "package": "node scripts/package.js",
+    "package:mac": "electron-builder --mac",
+    "package:linux": "electron-builder --linux",
     "postinstall": "electron-builder install-app-deps"
   },
   "dependencies": {
@@ -63,7 +66,40 @@
       "node_modules/@xterm/**/*"
     ],
     "win": {
-      "target": ["dir"]
+      "target": [
+        "dir"
+      ],
+      "icon": "public/icon.ico"
+    },
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
+      ],
+      "category": "public.app-category.developer-tools",
+      "icon": "public/icon.icns",
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "category": "Development",
+      "icon": "public/icon.png"
     },
     "npmRebuild": false,
     "nodeGypRebuild": false

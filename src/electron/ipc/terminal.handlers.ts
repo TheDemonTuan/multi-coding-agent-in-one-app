@@ -308,7 +308,8 @@ export function initializeTerminalHandlers(mainWindow: BrowserWindow | null, sto
     }
 
     const actualCwd = cwd || process.cwd();
-    const shell = process.platform === 'win32' ? 'powershell.exe' : 'bash';
+    const shell = process.platform === 'win32' ? 'powershell.exe'
+      : process.platform === 'darwin' ? '/bin/zsh' : '/bin/bash';
     const args = process.platform === 'win32' ? ['-NoLogo', '-NoExit'] : [];
 
     try {
@@ -495,7 +496,8 @@ export function initializeTerminalHandlers(mainWindow: BrowserWindow | null, sto
       await autoPatchIfNeeded(store, mainWindow);
     }
 
-    const shell = process.platform === 'win32' ? 'powershell.exe' : 'bash';
+    const shell = process.platform === 'win32' ? 'powershell.exe'
+      : process.platform === 'darwin' ? '/bin/zsh' : '/bin/bash';
     let args: string[] = [];
 
     // Build agent command if specified
@@ -521,7 +523,8 @@ export function initializeTerminalHandlers(mainWindow: BrowserWindow | null, sto
           const fullCmd = `${agentCmd} ${agentConfig.args?.join(' ') || ''}`.trim();
           args = ['-NoLogo', '-NoExit', '-Command', fullCmd];
         } else {
-          args = ['-c', `${agentConfig.args?.join(' ') || ''}; exec $SHELL`];
+          const fullCmd = `${agentCmd} ${agentConfig.args?.join(' ') || ''}`.trim();
+          args = ['-c', `${fullCmd}; exec $SHELL`];
         }
       } else {
         args = process.platform === 'win32' ? ['-NoLogo', '-NoExit'] : [];

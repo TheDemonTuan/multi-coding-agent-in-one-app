@@ -3,12 +3,14 @@ import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { WebLinksAddon } from '@xterm/addon-web-links';
 import { SearchAddon } from '@xterm/addon-search';
+import { WebglAddon } from '@xterm/addon-webgl';
 import '@xterm/xterm/css/xterm.css';
 import { TerminalPane, AgentType } from '../../types/workspace';
 import { useWorkspaceStore } from '../../stores/workspaceStore';
 import { TerminalContextMenu } from './TerminalContextMenu';
 import { ScrollToBottomButton } from '../ui/ScrollToBottomButton';
 import { TerminalSearch } from './TerminalSearch';
+import { parseOSC133, CommandBlockTracker } from '../../lib/osc133Parser';
 
 // Theme constants - VS Code / xterm.js recommended dark terminal colors
 const DARK_THEME = {
@@ -100,11 +102,13 @@ export const TerminalCell = React.memo<TerminalCellProps>(({
   const fitAddonRef = useRef<FitAddon | null>(null);
   const webLinksAddonRef = useRef<WebLinksAddon | null>(null);
   const searchAddonRef = useRef<SearchAddon | null>(null);
+  const webglAddonRef = useRef<WebglAddon | null>(null);
   const resizeObserverRef = useRef<ResizeObserver | null>(null);
   const hasInitializedRef = useRef(false);
   const hasInitiallyFitRef = useRef(false);
   const dataBufferRef = useRef<string[]>([]);
   const isInitialFitCompleteRef = useRef(false);
+  const commandBlockTrackerRef = useRef<CommandBlockTracker | null>(null);
 
   const { restartTerminal, getNextWorkspace, getPreviousWorkspace, setCurrentWorkspace, switchTerminalAgent } = useWorkspaceStore();
 
@@ -222,6 +226,7 @@ export const TerminalCell = React.memo<TerminalCellProps>(({
         break;
       case 'clear':
         terminalRef.current?.clear();
+        commandBlockTrackerRef.current?.clear();
         break;
       case 'restart':
         terminalRef.current?.clear();
@@ -414,14 +419,27 @@ export const TerminalCell = React.memo<TerminalCellProps>(({
     const webLinksAddon = new WebLinksAddon();
     const searchAddon = new SearchAddon();
 
-    // Disable WebGL - use canvas rendering only for better compatibility
-    // WebGL causes issues on many systems with GPU virtualization
-    // Note: Not loading WebglAddon at all to avoid "Stacking order" and WebGL errors
-
     term.loadAddon(fitAddon);
     term.loadAddon(webLinksAddon);
     term.loadAddon(searchAddon);
     term.open(containerRef.current);
+
+    // Try to enable GPU-accelerated WebGL rendering (up to ~900% faster than Canvas).
+    // Falls back gracefully to Canvas 2D renderer if WebGL is unavailable
+    // (e.g., headless environments, GPU virtualization, or driver issues).
+    try {
+      const webglAddon = new WebglAddon();
+      webglAddon.onContextLoss(() => {
+        console.warn(`[TerminalCell ${terminal.id}] WebGL context lost, falling back to Canvas renderer`);
+        webglAddon.dispose();
+        webglAddonRef.current = null;
+      });
+      term.loadAddon(webglAddon);
+      webglAddonRef.current = webglAddon;
+      console.log(`[TerminalCell ${terminal.id}] WebGL renderer loaded successfully (GPU-accelerated)`);
+    } catch (err) {
+      console.warn(`[TerminalCell ${terminal.id}] WebGL unavailable, using Canvas renderer:`, err);
+    }
 
     // Delay initial fit to ensure container has proper dimensions
     // This prevents garbled/corrupted text rendering on first load
@@ -450,6 +468,11 @@ export const TerminalCell = React.memo<TerminalCellProps>(({
     webLinksAddonRef.current = webLinksAddon;
     searchAddonRef.current = searchAddon;
     hasInitializedRef.current = true;
+
+    // Initialize OSC 133 command block tracker — uses live terminal row position
+    commandBlockTrackerRef.current = new CommandBlockTracker(
+      () => terminalRef.current?.buffer.active.baseY ?? 0
+    );
 
     term.options.theme = theme === 'dark' ? DARK_THEME : LIGHT_THEME;
 
@@ -497,12 +520,22 @@ export const TerminalCell = React.memo<TerminalCellProps>(({
 
     listenersRef.current.unsubscribeData = (window as any).electronAPI.onTerminalData(({ id, data }: { id: string; data: string }) => {
       if (id === terminal.id && terminalRef.current) {
+        // Parse and strip OSC 133 shell integration sequences before rendering.
+        // This prevents garbage characters in terminals that emit these markers
+        // (PowerShell 7+, zsh with shell integration, fish).
+        const { cleaned, markers } = parseOSC133(data);
+        if (markers.length > 0) {
+          commandBlockTrackerRef.current?.processMarkers(markers);
+          console.debug(`[TerminalCell ${terminal.id}] OSC 133 markers:`, markers);
+        }
+        const outputData = markers.length > 0 ? cleaned : data;
+
         // Buffer data until initial fit is complete to prevent garbled output
         if (!isInitialFitCompleteRef.current) {
-          dataBufferRef.current.push(data);
+          dataBufferRef.current.push(outputData);
           return;
         }
-        terminalRef.current.write(data);
+        terminalRef.current.write(outputData);
 
         const buffer = terminalRef.current.buffer.active;
         if (buffer.viewportY < buffer.baseY - buffer.viewportY) {
@@ -600,6 +633,38 @@ export const TerminalCell = React.memo<TerminalCellProps>(({
           setCurrentWorkspace(prevWs);
           // Dispatch custom event to notify App.tsx to open workspace switcher modal
           window.dispatchEvent(new CustomEvent('open-workspace-switcher'));
+        }
+        return false;
+      }
+
+      // Ctrl+Shift+Up: navigate to previous command block (OSC 133)
+      if (e.ctrlKey && e.shiftKey && e.key === 'ArrowUp') {
+        e.preventDefault();
+        const tracker = commandBlockTrackerRef.current;
+        if (tracker && terminalRef.current) {
+          const currentRow = terminalRef.current.buffer.active.viewportY;
+          const promptRows = tracker.getPromptRows();
+          const prevRow = [...promptRows].reverse().find(r => r < currentRow - 1);
+          if (prevRow !== undefined) {
+            terminalRef.current.scrollToLine(prevRow);
+          }
+        }
+        return false;
+      }
+
+      // Ctrl+Shift+Down: navigate to next command block (OSC 133)
+      if (e.ctrlKey && e.shiftKey && e.key === 'ArrowDown') {
+        e.preventDefault();
+        const tracker = commandBlockTrackerRef.current;
+        if (tracker && terminalRef.current) {
+          const currentRow = terminalRef.current.buffer.active.viewportY;
+          const promptRows = tracker.getPromptRows();
+          const nextRow = promptRows.find(r => r > currentRow + 1);
+          if (nextRow !== undefined) {
+            terminalRef.current.scrollToLine(nextRow);
+          } else {
+            terminalRef.current.scrollToBottom();
+          }
         }
         return false;
       }
@@ -744,6 +809,15 @@ export const TerminalCell = React.memo<TerminalCellProps>(({
       // Dispose addons explicitly before terminal disposal for clarity
       // Note: terminal.dispose() will dispose all loaded addons automatically,
       // but we dispose them explicitly here for better debugging and clarity
+      if (webglAddonRef.current) {
+        try {
+          webglAddonRef.current.dispose();
+        } catch (err: any) {
+          console.warn(`[TerminalCell ${terminal.id}] Error disposing WebglAddon:`, err);
+        }
+        webglAddonRef.current = null;
+      }
+
       if (fitAddonRef.current) {
         try {
           fitAddonRef.current.dispose();

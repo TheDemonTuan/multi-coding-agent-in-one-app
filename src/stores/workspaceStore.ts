@@ -17,7 +17,9 @@ const getWorkingDirectory = (): string => {
 };
 
 const getShell = (): string => {
-  return cachedPlatform === 'win32' ? 'powershell.exe' : 'bash';
+  if (cachedPlatform === 'win32') return 'powershell.exe';
+  if (cachedPlatform === 'darwin') return '/bin/zsh';
+  return '/bin/bash';
 };
 
 // Initialize platform and cwd from electronAPI if available

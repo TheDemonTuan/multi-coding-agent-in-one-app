@@ -62,7 +62,9 @@ export function isLinux(): boolean {
  * Get platform-specific shell
  */
 export function getShell(): string {
-  return isWindows() ? 'powershell.exe' : 'bash';
+  if (isWindows()) return 'powershell.exe';
+  if (isMacOS()) return '/bin/zsh';
+  return '/bin/bash';
 }
 
 /**

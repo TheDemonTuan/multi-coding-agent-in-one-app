@@ -11,6 +11,11 @@
   -webkit-app-region: drag;
 }
 
+/* macOS: leave space for native traffic light buttons (close/minimize/maximize) */
+.title-bar.macos {
+  padding-left: 80px;
+}
+
 .title-left {
   display: flex;
   align-items: center;
@@ -165,16 +170,16 @@
     padding: 6px 10px;
     height: 40px;
   }
-  
+
   .workspace-indicator {
     display: none;
   }
-  
+
   .theme-toggle-btn {
     width: 28px;
     height: 28px;
   }
-  
+
   .window-control-btn {
     width: 24px;
     height: 24px;
