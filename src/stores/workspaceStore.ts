@@ -122,44 +122,38 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => {
 
     isTerminalRestarting: (terminalId) => get().restartingTerminals.has(terminalId),
 
-    loadWorkspaces: () => {
-      backendAPI.getStoreValue(WORKSPACES_STORAGE_KEY)
-        .then((stored: WorkspaceLayout[] | null) => {
-          if (stored && Array.isArray(stored) && stored.length > 0) {
-            set({
-              workspaces: stored,
-              currentWorkspace: stored[0] || null
-            });
-          } else {
-            set({
-              workspaces: [],
-              currentWorkspace: null
-            });
-          }
-        })
-        .catch((err: any) => console.error('[WorkspaceStore] Failed to load workspaces:', err));
+    loadWorkspaces: async () => {
+      try {
+        const workspaces = await backendAPI.getWorkspaces();
+        // Filter out null/undefined workspaces and those without id
+        const validWorkspaces = (workspaces || []).filter((ws: any) => ws && ws.id);
+        if (validWorkspaces.length > 0) {
+          set({
+            workspaces: validWorkspaces,
+            currentWorkspace: validWorkspaces[0] || null
+          });
+        } else {
+          set({
+            workspaces: [],
+            currentWorkspace: null
+          });
+        }
+      } catch (err) {
+        console.error('[WorkspaceStore] Failed to load workspaces from backend:', err);
+        set({
+          workspaces: [],
+          currentWorkspace: null
+        });
+      }
     },
 
     saveWorkspaces: () => {
-      const { workspaces } = get();
-      backendAPI.setStoreValue(WORKSPACES_STORAGE_KEY, workspaces)
-        .catch((err: any) => console.error('[WorkspaceStore] Failed to save workspaces:', err));
+      // No-op: workspaces are saved individually via CRUD methods
+      // This method is kept for backward compatibility but does nothing
     },
 
     setCurrentWorkspace: (workspace) => {
-      set((state) => {
-        const newState = { currentWorkspace: workspace };
-
-        debounceSave(async () => {
-          try {
-            await backendAPI.setStoreValue(WORKSPACES_STORAGE_KEY, state.workspaces);
-          } catch (err) {
-            console.error('[WorkspaceStore] Failed to save after set:', err);
-          }
-        }, 300);
-
-        return newState;
-      });
+      set({ currentWorkspace: workspace });
 
       // Validate Vietnamese IME patch when switching to workspace with Claude Code terminals
       backendAPI.validatePatchForWorkspace(workspace).catch((err: any) => {
@@ -167,74 +161,89 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => {
       });
     },
 
-    addWorkspace: (config) => {
+    addWorkspace: async (config) => {
       const newWorkspace = createDefaultWorkspace(config);
-      set((state) => {
-        const updatedWorkspaces = [...state.workspaces, newWorkspace];
-        const newState = {
-          workspaces: updatedWorkspaces,
-          currentWorkspace: newWorkspace,
-        };
+      console.log('[WorkspaceStore] addWorkspace: created default workspace with', newWorkspace.terminals.length, 'terminals');
 
-        debounceSave(async () => {
-          try {
-            await backendAPI.setStoreValue(WORKSPACES_STORAGE_KEY, updatedWorkspaces);
-          } catch (err) {
-            console.error('[WorkspaceStore] Failed to save after add:', err);
-          }
-        }, 300);
-
-        return newState;
-      });
-      return newWorkspace;
+      // Convert to backend Workspace format (they should be compatible)
+      try {
+        console.log('[WorkspaceStore] addWorkspace: calling backendAPI.createWorkspace...');
+        const created = await backendAPI.createWorkspace(newWorkspace);
+        console.log('[WorkspaceStore] addWorkspace: backend returned:', created);
+        if (!created) {
+          console.error('[WorkspaceStore] addWorkspace: backend returned null/undefined');
+          throw new Error('Backend returned null');
+        }
+        if (!created.id) {
+          console.error('[WorkspaceStore] addWorkspace: backend returned workspace without id');
+          throw new Error('Backend returned workspace without id');
+        }
+        if (!created.terminals || created.terminals.length === 0) {
+          console.error('[WorkspaceStore] addWorkspace: backend returned workspace without terminals');
+          throw new Error('Backend returned workspace without terminals');
+        }
+        set((state) => {
+          const updatedWorkspaces = [...state.workspaces, created];
+          return {
+            workspaces: updatedWorkspaces,
+            currentWorkspace: created,
+          };
+        });
+        return created;
+      } catch (err) {
+        console.error('[WorkspaceStore] Failed to create workspace in backend:', err);
+        // Fallback: add locally only
+        set((state) => {
+          const updatedWorkspaces = [...state.workspaces, newWorkspace];
+          return {
+            workspaces: updatedWorkspaces,
+            currentWorkspace: newWorkspace,
+          };
+        });
+        return newWorkspace;
+      }
     },
 
     removeWorkspace: async (id) => {
+      // Delete from backend first
       try {
         await backendAPI.deleteWorkspace(id);
       } catch (err) {
         console.error('[WorkspaceStore] Failed to delete workspace in backend:', err);
       }
 
+      // Update local state
       set((state) => {
         const updatedWorkspaces = state.workspaces.filter((ws) => ws.id !== id);
-        const newState = {
+        return {
           workspaces: updatedWorkspaces,
           currentWorkspace: state.currentWorkspace?.id === id
             ? (updatedWorkspaces[0] || null)
             : state.currentWorkspace,
         };
-
-        // Save immediately for delete operations
-        backendAPI.setStoreValue(WORKSPACES_STORAGE_KEY, updatedWorkspaces)
-          .catch((err: any) => console.error('[WorkspaceStore] Failed to save after remove:', err));
-
-        return newState;
       });
     },
 
-    updateWorkspace: (id, updates) => {
+    updateWorkspace: async (id, updates) => {
       set((state) => {
         const updatedWorkspaces = state.workspaces.map(ws =>
           ws.id === id ? { ...ws, ...updates, lastUsed: Date.now() } : ws
         );
 
-        const newState = {
+        const updatedCurrentWorkspace = state.currentWorkspace?.id === id
+          ? { ...state.currentWorkspace, ...updates, lastUsed: Date.now() }
+          : state.currentWorkspace;
+
+        // Update backend asynchronously
+        backendAPI.updateWorkspace(updatedWorkspaces.find(ws => ws.id === id)!)
+          .catch((err) => {
+            console.error('[WorkspaceStore] Failed to update workspace in backend:', err);
+          });
+
+        return {
           workspaces: updatedWorkspaces,
-          currentWorkspace: state.currentWorkspace?.id === id
-            ? { ...state.currentWorkspace, ...updates, lastUsed: Date.now() }
-            : state.currentWorkspace,
+          currentWorkspace: updatedCurrentWorkspace,
         };
-
-        debounceSave(async () => {
-          try {
-            await backendAPI.setStoreValue(WORKSPACES_STORAGE_KEY, updatedWorkspaces);
-          } catch (err) {
-            console.error('[WorkspaceStore] Failed to save after update:', err);
-          }
-        }, 300);
-
-        return newState;
       });
     },
 
@@ -277,20 +286,16 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => {
           ws.id === state.currentWorkspace!.id ? updatedWorkspace : ws
         );
 
-        const newState = {
+        // Update backend asynchronously
+        backendAPI.updateWorkspace(updatedWorkspace)
+          .catch((err) => {
+            console.error('[WorkspaceStore] Failed to save after agent update:', err);
+          });
+
+        return {
           currentWorkspace: updatedWorkspace,
           workspaces: updatedWorkspaces,
         };
-
-        debounceSave(async () => {
-          try {
-            await backendAPI.setStoreValue(WORKSPACES_STORAGE_KEY, updatedWorkspaces);
-          } catch (err) {
-            console.error('[WorkspaceStore] Failed to save after agent update:', err);
-          }
-        }, 300);
-
-        return newState;
       });
     },
 
@@ -402,13 +407,11 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => {
         activeTerminalId: nextTerminal?.id || null,
       });
 
-      debounceSave(async () => {
-        try {
-          await backendAPI.setStoreValue(WORKSPACES_STORAGE_KEY, updatedWorkspaces);
-        } catch (err) {
-          console.error('[WorkspaceStore] Failed to save after remove:', err);
-        }
-      }, 300);
+      // Update backend asynchronously
+      backendAPI.updateWorkspace(updatedWorkspace)
+        .catch((err) => {
+          console.error('[WorkspaceStore] Failed to save after remove terminal:', err);
+        });
     },
 
     splitTerminal: (terminalId: string, direction: 'horizontal' | 'vertical') => {
@@ -462,13 +465,11 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => {
         activeTerminalId: newTerminal.id,
       });
 
-      debounceSave(async () => {
-        try {
-          await backendAPI.setStoreValue(WORKSPACES_STORAGE_KEY, updatedWorkspaces);
-        } catch (err) {
-          console.error('[WorkspaceStore] Failed to save after split:', err);
-        }
-      }, 300);
+      // Update backend asynchronously
+      backendAPI.updateWorkspace(updatedWorkspace)
+        .catch((err) => {
+          console.error('[WorkspaceStore] Failed to save after split terminal:', err);
+        });
     },
 
     // Helper methods for keyboard navigation

@@ -32,7 +32,7 @@ func main() {
 	vietnameseIMESvc.Init(storeSvc)
 
 	// Create App and wire its services
-	app := NewApp(terminalSvc, storeSvc, systemSvc)
+	app := NewApp(terminalSvc, storeSvc, systemSvc, vietnameseIMESvc)
 
 	frameless := runtime.GOOS == "windows"
 
@@ -61,7 +61,7 @@ func main() {
 		MinHeight:        600,
 		Windows:          windowsOpts,
 		Debug: options.Debug{
-			OpenInspectorOnStartup: true,
+			OpenInspectorOnStartup: false,
 		},
 		Bind: []interface{}{
 			app,

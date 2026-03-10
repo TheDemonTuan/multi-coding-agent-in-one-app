@@ -6,6 +6,7 @@
  *
  * Wails auto-generates TypeScript bindings from Go exported methods.
  * They are available at: window.go.<PackageName>.<StructName>.<MethodName>()
+ * For services in 'services' package: window.go.main.services.<ServiceName>.<MethodName>()
  *
  * Event system uses: window.runtime.EventsOn / EventsOff / EventsEmit
  */
@@ -14,10 +15,15 @@ import type {
   VietnameseImePatchResult,
   VietnameseImeStatus,
   VietnameseImeSettings,
-  PatchValidation,
+  PatchValidation as BackendPatchValidation,
   OpenDialogOptions,
   OpenDialogReturnValue,
-} from '../types/backend';
+  PatchResult as BackendPatchResult,
+  PatchStatus as BackendPatchStatus,
+  IMESettings as BackendIMESettings,
+  RestoreResult as BackendRestoreResult,
+  Result as BackendResult,
+} from '../types/backend-legacy';
 
 import type { AgentConfig } from '../types/workspace';
 
@@ -26,8 +32,8 @@ import type { AgentConfig } from '../types/workspace';
 declare global {
   interface Window {
     // Wails Go bindings (auto-generated)
-    go: {
-      main: {
+    go?: {
+      main?: {
         App: {
           // Terminal methods
           SpawnTerminal(id: string, cwd: string, workspaceId: string): Promise<{ success: boolean; pid?: number; error?: string }>;
@@ -49,12 +55,35 @@ declare global {
           WindowMaximize(): Promise<void>;
           WindowClose(): Promise<void>;
           WindowIsMaximized(): Promise<boolean>;
+          // Vietnamese IME methods
+          ApplyVietnameseImePatch(): Promise<BackendPatchResult>;
+          CheckVietnameseImePatchStatus(): Promise<BackendPatchStatus>;
+          GetVietnameseImeSettings(): Promise<BackendIMESettings>;
+          SetVietnameseImeSettings(settings: BackendIMESettings): Promise<BackendResult>;
+          RestoreVietnameseImePatch(): Promise<BackendRestoreResult>;
+          ValidateVietnameseImePatch(): Promise<BackendPatchValidation>;
+        };
+        // Services bound via Wails (window.go.main.<package>.<ServiceName>)
+        services?: {
+          WorkspaceService?: {
+            GetWorkspaces(): Promise<any[]>;
+            CreateWorkspace(workspace: any): Promise<any>;
+            UpdateWorkspace(workspace: any): Promise<any>;
+            DeleteWorkspace(id: string): Promise<BackendResult>;
+            GetWorkspace(id: string): Promise<any>;
+            PatchWorkspace(id: string, patch: Record<string, any>): Promise<any>;
+          };
+          TemplateService?: {
+            GetTemplates(): Promise<any[]>;
+            SaveTemplate(template: any): Promise<any>;
+            DeleteTemplate(id: string): Promise<BackendResult>;
+          };
         };
       };
     };
 
     // Wails runtime event system
-    runtime: {
+    runtime?: {
       EventsOn(eventName: string, callback: (...data: any[]) => void): () => void;
       EventsOff(eventName: string, ...callbacks: Array<(...data: any[]) => void>): void;
       EventsEmit(eventName: string, ...data: any[]): void;
@@ -71,7 +100,7 @@ declare global {
 export function isWailsAvailable(): boolean {
   return (
     typeof window !== 'undefined' &&
-    !!(window as any).go?.main?.App
+    !!(window.go?.main?.App || window.go?.main?.services?.WorkspaceService)
   );
 }
 
@@ -110,6 +139,7 @@ export interface BackendAPI {
   // Workspace management
   getWorkspaces(): Promise<any[]>;
   createWorkspace(config: any): Promise<any>;
+  updateWorkspace(workspace: any): Promise<any>;
   deleteWorkspace(id: string): Promise<{ success: boolean; error?: string }>;
   switchWorkspace(id: string): Promise<any>;
   cleanupWorkspaceTerminals(workspaceId: string): Promise<{ success: boolean; cleaned?: number }>;
@@ -142,7 +172,7 @@ export interface BackendAPI {
   setVietnameseImeSettings(settings: VietnameseImeSettings): Promise<{ success: boolean; error?: string }>;
   restartClaudeTerminals(workspaceId: string, terminals: Array<{ id: string; cwd: string; agentConfig?: any }>): Promise<{ success: boolean; restarted?: Array<{ id: string; success: boolean; error?: string }> }>;
   restoreVietnameseImePatch(): Promise<{ success: boolean; message?: string }>;
-  validateVietnameseImePatch(): Promise<PatchValidation>;
+  validateVietnameseImePatch(): Promise<BackendPatchValidation>;
   onVietnameseImePatchApplied(callback: (result: VietnameseImePatchResult) => void): () => void;
 
   // Workspace-level IME patch validation
@@ -153,6 +183,8 @@ export interface BackendAPI {
 
 function createWailsBridge(): BackendAPI {
   const app = () => window.go?.main?.App;
+  const workspaceService = () => window.go?.main?.services?.WorkspaceService;
+  const templateService = () => window.go?.main?.services?.TemplateService;
   const runtime = () => window.runtime;
 
   const onEvent = (eventName: string, callback: (...args: any[]) => void): (() => void) => {
@@ -177,9 +209,9 @@ function createWailsBridge(): BackendAPI {
   };
 
   return {
-    getAppVersion: () => safeCall(() => app()?.GetAppVersion(), 'unknown'),
-    getPlatform:   () => safeCall(() => app()?.GetPlatform(), 'unknown'),
-    getCwd:        () => safeCall(() => app()?.GetCwd(), './'),
+    getAppVersion: () => safeCall(() => app()?.GetAppVersion() ?? Promise.resolve('unknown'), 'unknown'),
+    getPlatform:   () => safeCall(() => app()?.GetPlatform() ?? Promise.resolve('unknown'), 'unknown'),
+    getCwd:        () => safeCall(() => app()?.GetCwd() ?? Promise.resolve('./'), './'),
 
     windowMinimize: async () => { app()?.WindowMinimize(); },
     windowMaximize: async () => { app()?.WindowMaximize(); },
@@ -200,18 +232,131 @@ function createWailsBridge(): BackendAPI {
       return Promise.resolve({ canceled: true, filePaths: [] } as OpenDialogReturnValue);
     }, { canceled: true, filePaths: [] }),
 
-    getWorkspaces:              ()     => safeCall(() => {
-      console.warn('[WailsBridge] getWorkspaces not implemented');
-      return Promise.resolve([]);
-    }, []),
-    createWorkspace:            (cfg)  => safeCall(() => {
-      console.warn('[WailsBridge] createWorkspace not implemented');
-      return Promise.resolve(null);
-    }, null),
-    deleteWorkspace:            (id)   => safeCall(() => {
-      console.warn('[WailsBridge] deleteWorkspace not implemented');
-      return Promise.resolve({ success: false, error: 'WorkspaceService not implemented' });
-    }, { success: false, error: 'WorkspaceService not implemented' }),
+    getWorkspaces: () => {
+      const result = workspaceService()?.GetWorkspaces();
+      if (!result) return Promise.resolve([]);
+      return result.then((workspaces: any[]) => {
+        // Convert Go Workspace format to frontend WorkspaceLayout format
+        // Filter out null/undefined workspaces and those without id
+        return (workspaces || [])
+          .filter((ws: any) => ws && ws.id)
+          .map((ws: any) => ({
+            id: ws.id,
+            name: ws.name,
+            columns: ws.layout?.columns || 1,
+            rows: ws.layout?.rows || 1,
+            terminals: (ws.terminals || []).filter((t: any) => t && t.id).map((t: any) => ({
+              id: t.id,
+              title: t.title || 'Terminal',
+              cwd: t.cwd,
+              shell: 'powershell.exe',
+              status: t.status,
+              agent: { type: t.agentType || 'none', enabled: t.agentType !== 'none' },
+            })),
+            icon: ws.icon,
+            createdAt: ws.createdAt,
+            lastUsed: ws.updatedAt || ws.createdAt,
+          }));
+      }).catch(() => [] as any[]);
+    },
+    createWorkspace: (cfg) => {
+      // Convert frontend WorkspaceLayout format to Go Workspace format
+      const goWorkspace = {
+        id: cfg.id || '',
+        name: cfg.name,
+        cwd: cfg.cwd || cfg.terminals?.[0]?.cwd || './',
+        layout: {
+          rows: cfg.rows,
+          columns: cfg.columns,
+        },
+        terminals: (cfg.terminals || []).map((t: any) => ({
+          id: t.id,
+          workspaceId: cfg.id,
+          agentType: t.agent?.type || 'none',
+          cwd: t.cwd,
+          title: t.title,
+          status: t.status,
+          command: '',
+          args: [],
+        })),
+        icon: cfg.icon,
+        createdAt: cfg.createdAt || Date.now(),
+        updatedAt: Date.now(),
+      };
+      const result = workspaceService()?.CreateWorkspace(goWorkspace);
+      if (!result) return Promise.resolve(null as any);
+      return result.then((ws: any) => {
+        // Convert Go Workspace format to frontend WorkspaceLayout format
+        if (!ws || !ws.id) return null as any;
+        // Ensure terminals is always an array and filter out null entries
+        const terminals = (ws.terminals || []).filter((t: any) => t && t.id).map((t: any) => ({
+          id: t.id,
+          title: t.title || 'Terminal',
+          cwd: t.cwd,
+          shell: 'powershell.exe',
+          status: t.status,
+          agent: { type: t.agentType || 'none', enabled: t.agentType !== 'none' },
+        }));
+        return {
+          id: ws.id,
+          name: ws.name,
+          columns: ws.layout?.columns || cfg.columns,
+          rows: ws.layout?.rows || cfg.rows,
+          terminals: terminals,
+          icon: cfg.icon,
+          createdAt: ws.createdAt,
+          lastUsed: ws.updatedAt || ws.createdAt,
+        };
+      }).catch(() => null as any);
+    },
+    updateWorkspace: (ws) => {
+      // Convert frontend WorkspaceLayout format to Go Workspace format
+      const goWorkspace = {
+        id: ws.id,
+        name: ws.name,
+        cwd: ws.cwd || ws.terminals?.[0]?.cwd || './',
+        layout: {
+          rows: ws.rows,
+          columns: ws.columns,
+        },
+        terminals: (ws.terminals || []).map((t: any) => ({
+          id: t.id,
+          workspaceId: ws.id,
+          agentType: t.agent?.type || 'none',
+          cwd: t.cwd,
+          title: t.title,
+          status: t.status,
+          command: '',
+          args: [],
+        })),
+        createdAt: ws.createdAt || Date.now(),
+        updatedAt: Date.now(),
+      };
+      const result = workspaceService()?.UpdateWorkspace(goWorkspace);
+      if (!result) return Promise.resolve(null as any);
+      return result.then((result: any) => {
+        // Convert Go Workspace format to frontend WorkspaceLayout format
+        if (!result || !result.id) return null as any;
+        return {
+          id: result.id,
+          name: result.name,
+          columns: result.layout?.columns || ws.columns,
+          rows: result.layout?.rows || ws.rows,
+          terminals: (result.terminals || []).map((t: any) => ({
+            id: t.id,
+            title: t.title || 'Terminal',
+            cwd: t.cwd,
+            shell: 'powershell.exe',
+            status: t.status,
+            agent: { type: t.agentType || 'none', enabled: t.agentType !== 'none' },
+          })),
+          icon: ws.icon,
+          createdAt: result.createdAt,
+          lastUsed: result.updatedAt || result.createdAt,
+        };
+      }).catch(() => null as any);
+    },
+    deleteWorkspace:            (id)   => safeCall(() => workspaceService()?.DeleteWorkspace(id) ?? Promise.resolve({ success: false, error: 'WorkspaceService unavailable' }), { success: false, error: 'Failed to delete workspace' }),
     switchWorkspace:            (id)   => safeCall(() => {
       console.warn('[WailsBridge] switchWorkspace not implemented');
       return Promise.resolve(null);
@@ -221,18 +366,9 @@ function createWailsBridge(): BackendAPI {
       return Promise.resolve({ success: false, cleaned: 0 });
     }, { success: false, cleaned: 0 }),
 
-    getTemplates:   ()     => safeCall(() => {
-      console.warn('[WailsBridge] getTemplates not implemented');
-      return Promise.resolve([]);
-    }, []),
-    saveTemplate:   (t)    => safeCall(() => {
-      console.warn('[WailsBridge] saveTemplate not implemented');
-      return Promise.resolve({ success: false, error: 'TemplateService not implemented' });
-    }, { success: false, error: 'TemplateService not implemented' }),
-    deleteTemplate: (id)   => safeCall(() => {
-      console.warn('[WailsBridge] deleteTemplate not implemented');
-      return Promise.resolve({ success: false, error: 'TemplateService not implemented' });
-    }, { success: false, error: 'TemplateService not implemented' }),
+    getTemplates:   ()     => safeCall(() => templateService()?.GetTemplates() ?? Promise.resolve([]), []),
+    saveTemplate:   (t)    => safeCall(() => templateService()?.SaveTemplate(t) ?? Promise.resolve({ success: false, error: 'TemplateService unavailable' }), { success: false, error: 'TemplateService failed' }),
+    deleteTemplate: (id)   => safeCall(() => templateService()?.DeleteTemplate(id) ?? Promise.resolve({ success: false, error: 'TemplateService unavailable' }), { success: false, error: 'TemplateService failed' }),
 
     spawnTerminal: (id, cwd, workspaceId = '') =>
       safeCall(() => app()!.SpawnTerminal(id, cwd, workspaceId), { success: false, error: 'TerminalService unavailable' }),
@@ -243,39 +379,21 @@ function createWailsBridge(): BackendAPI {
     terminalResize: (id, cols, rows)     => safeCall(() => app()!.ResizeTerminal(id, cols, rows), { success: false }),
     getTerminalStatus: (id)              => safeCall(() => app()!.GetTerminalStatus(id), { exists: false, status: 'stopped' }),
 
-    onTerminalData:    (cb) => onEvent(WAILS_EVENTS.TERMINAL_DATA,    cb),
-    onTerminalStarted: (cb) => onEvent(WAILS_EVENTS.TERMINAL_STARTED, cb),
-    onTerminalExit:    (cb) => onEvent(WAILS_EVENTS.TERMINAL_EXIT,    cb),
-    onTerminalError:   (cb) => onEvent(WAILS_EVENTS.TERMINAL_ERROR,   cb),
+    onTerminalData:    (cb) => { const cleanup = onEvent(WAILS_EVENTS.TERMINAL_DATA, cb); return cleanup || (() => {}); },
+    onTerminalStarted: (cb) => { const cleanup = onEvent(WAILS_EVENTS.TERMINAL_STARTED, cb); return cleanup || (() => {}); },
+    onTerminalExit:    (cb) => { const cleanup = onEvent(WAILS_EVENTS.TERMINAL_EXIT, cb); return cleanup || (() => {}); },
+    onTerminalError:   (cb) => { const cleanup = onEvent(WAILS_EVENTS.TERMINAL_ERROR, cb); return cleanup || (() => {}); },
 
-    applyVietnameseImePatch:       ()          => safeCall(() => {
-      console.warn('[WailsBridge] applyVietnameseImePatch not implemented');
-      return Promise.resolve({ success: false, message: 'VietnameseIMEService not implemented' });
-    }, { success: false, message: 'VietnameseIMEService not implemented' }),
-    checkVietnameseImePatchStatus: ()          => safeCall(() => {
-      console.warn('[WailsBridge] checkVietnameseImePatchStatus not implemented');
-      return Promise.resolve({ isPatched: false, claudePath: undefined, claudeCodeInstalled: false });
-    }, { isPatched: false, claudePath: undefined, claudeCodeInstalled: false }),
-    getVietnameseImeSettings:      ()          => safeCall(() => {
-      console.warn('[WailsBridge] getVietnameseImeSettings not implemented');
-      return Promise.resolve({ enabled: false, autoPatch: false });
-    }, { enabled: false, autoPatch: false }),
-    setVietnameseImeSettings:      (settings)  => safeCall(() => {
-      console.warn('[WailsBridge] setVietnameseImeSettings not implemented');
-      return Promise.resolve({ success: false, error: 'VietnameseIMEService not implemented' });
-    }, { success: false, error: 'VietnameseIMEService not implemented' }),
+    applyVietnameseImePatch:       ()          => safeCall(() => app()!.ApplyVietnameseImePatch() as any, { success: false, message: 'Failed to apply patch' }),
+    checkVietnameseImePatchStatus: ()          => safeCall(() => app()!.CheckVietnameseImePatchStatus(), { isPatched: false, claudePath: '', hasBackup: false, installedVia: 'unknown' }),
+    getVietnameseImeSettings:      ()          => safeCall(() => app()!.GetVietnameseImeSettings(), { enabled: false, autoPatch: false }),
+    setVietnameseImeSettings:      (settings)  => safeCall(() => app()!.SetVietnameseImeSettings(settings), { success: false, error: 'Failed to save settings' }),
     restartClaudeTerminals:        (wsId, ts)  => safeCall(() => {
       console.warn('[WailsBridge] restartClaudeTerminals not implemented');
       return Promise.resolve({ success: false });
     }, { success: false }),
-    restoreVietnameseImePatch:     ()          => safeCall(() => {
-      console.warn('[WailsBridge] restoreVietnameseImePatch not implemented');
-      return Promise.resolve({ success: false, message: 'VietnameseIMEService not implemented' });
-    }, { success: false, message: 'VietnameseIMEService not implemented' }),
-    validateVietnameseImePatch:    ()          => safeCall(() => {
-      console.warn('[WailsBridge] validateVietnameseImePatch not implemented');
-      return Promise.resolve({ isValid: false });
-    }, { isValid: false }),
+    restoreVietnameseImePatch:     ()          => safeCall(() => app()!.RestoreVietnameseImePatch(), { success: false, message: 'Failed to restore' }),
+    validateVietnameseImePatch:    ()          => safeCall(() => app()!.ValidateVietnameseImePatch(), { isValid: false, isPatched: false, issues: [], suggestions: [] }),
     onVietnameseImePatchApplied:   (cb)        => onEvent(WAILS_EVENTS.IME_PATCH_APPLIED, cb),
 
     validatePatchForWorkspace: async (workspace) => {
@@ -306,6 +424,7 @@ function createStubBridge(): BackendAPI {
     showOpenDialog: () => Promise.resolve({ canceled: true, filePaths: [] }),
     getWorkspaces:              noopArr,
     createWorkspace:            () => Promise.resolve(null),
+    updateWorkspace:            () => Promise.resolve(null),
     deleteWorkspace:            noop as any,
     switchWorkspace:            () => Promise.resolve(null),
     cleanupWorkspaceTerminals:  noop as any,
@@ -323,7 +442,7 @@ function createStubBridge(): BackendAPI {
     onTerminalExit:    noopUnsubscribe,
     onTerminalError:   noopUnsubscribe,
     applyVietnameseImePatch:       noop as any,
-    checkVietnameseImePatchStatus: () => Promise.resolve({ isPatched: false, claudePath: undefined, claudeCodeInstalled: false }),
+    checkVietnameseImePatchStatus: () => Promise.resolve({ isPatched: false, claudePath: '', hasBackup: false, installedVia: 'unknown' }),
     getVietnameseImeSettings:      () => Promise.resolve({ enabled: false, autoPatch: false }),
     setVietnameseImeSettings:      noop as any,
     restartClaudeTerminals:        noop as any,

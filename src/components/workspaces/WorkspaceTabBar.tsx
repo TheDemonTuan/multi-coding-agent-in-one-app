@@ -289,13 +289,13 @@ export const WorkspaceTabBar: React.FC = () => {
     return workspace?.terminals?.length || 0;
   }, [workspaces]);
 
-  const totalTerminals = workspaces.reduce((acc, ws) => acc + getTerminalCount(ws.id), 0);
+  const totalTerminals = workspaces.filter(Boolean).reduce((acc, ws) => acc + getTerminalCount(ws.id), 0);
 
   return (
     <>
       <div className="workspace-tab-bar">
         <div className="tabs-container" role="tablist" aria-label="Workspaces">
-          {workspaces.map((workspace) => {
+          {workspaces.filter(Boolean).map((workspace) => {
             const isActive = currentWorkspace?.id === workspace.id;
             const terminalCount = getTerminalCount(workspace.id);
 

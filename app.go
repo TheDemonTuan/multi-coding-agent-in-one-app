@@ -14,18 +14,20 @@ import (
 
 // App struct holds the application context and services.
 type App struct {
-	ctx         context.Context
-	terminalSvc *services.TerminalService
-	storeSvc    *services.StoreService
-	systemSvc   *services.SystemService
+	ctx             context.Context
+	terminalSvc     *services.TerminalService
+	storeSvc        *services.StoreService
+	systemSvc       *services.SystemService
+	vietnameseIMESvc *services.VietnameseIMEService
 }
 
 // NewApp creates a new App with required services.
-func NewApp(terminalSvc *services.TerminalService, storeSvc *services.StoreService, systemSvc *services.SystemService) *App {
+func NewApp(terminalSvc *services.TerminalService, storeSvc *services.StoreService, systemSvc *services.SystemService, vietnameseIMESvc *services.VietnameseIMEService) *App {
 	return &App{
-		terminalSvc: terminalSvc,
-		storeSvc:    storeSvc,
-		systemSvc:   systemSvc,
+		terminalSvc:     terminalSvc,
+		storeSvc:        storeSvc,
+		systemSvc:       systemSvc,
+		vietnameseIMESvc: vietnameseIMESvc,
 	}
 }
 
@@ -230,4 +232,38 @@ func (a *App) GetPlatform() string {
 // GetCwd returns the current working directory.
 func (a *App) GetCwd() string {
 	return a.systemSvc.GetCwd()
+}
+
+// ============================================================================
+// VietnameseIMEService wrappers
+// ============================================================================
+
+// ApplyVietnameseImePatch applies the Vietnamese IME patch to Claude Code.
+func (a *App) ApplyVietnameseImePatch() services.PatchResult {
+	return a.vietnameseIMESvc.ApplyVietnameseImePatch()
+}
+
+// CheckVietnameseImePatchStatus returns the current patch status.
+func (a *App) CheckVietnameseImePatchStatus() services.PatchStatus {
+	return a.vietnameseIMESvc.GetPatchStatus()
+}
+
+// GetVietnameseImeSettings returns the Vietnamese IME settings.
+func (a *App) GetVietnameseImeSettings() services.IMESettings {
+	return a.vietnameseIMESvc.GetIMESettings()
+}
+
+// SetVietnameseImeSettings sets the Vietnamese IME settings.
+func (a *App) SetVietnameseImeSettings(settings services.IMESettings) services.Result {
+	return a.vietnameseIMESvc.SaveIMESettings(settings)
+}
+
+// RestoreVietnameseImePatch restores the original Claude Code from backup.
+func (a *App) RestoreVietnameseImePatch() services.RestoreResult {
+	return a.vietnameseIMESvc.RestoreFromBackup()
+}
+
+// ValidateVietnameseImePatch validates the current patch status.
+func (a *App) ValidateVietnameseImePatch() services.PatchValidation {
+	return a.vietnameseIMESvc.ValidatePatch()
 }

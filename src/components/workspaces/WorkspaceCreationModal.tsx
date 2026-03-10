@@ -418,7 +418,7 @@ export const WorkspaceCreationModal: React.FC<WorkspaceCreationModalProps> = ({
     });
   };
 
-  const handleCreateWorkspace = () => {
+  const handleCreateWorkspace = async () => {
     if (!selectedTemplate) {
       alert('Please select a template');
       return;
@@ -474,7 +474,7 @@ export const WorkspaceCreationModal: React.FC<WorkspaceCreationModalProps> = ({
         terminalIndex++;
       }
 
-      updateWorkspace(editingWorkspace.id, {
+      await updateWorkspace(editingWorkspace.id, {
         name: workspaceName,
         icon: selectedIcon,
         columns: selectedTemplate.columns,
@@ -483,7 +483,7 @@ export const WorkspaceCreationModal: React.FC<WorkspaceCreationModalProps> = ({
       });
     } else {
       // Create mode: add new workspace and auto-spawn terminals
-      const workspace = addWorkspace({
+      const workspace = await addWorkspace({
         name: workspaceName,
         columns: selectedTemplate.columns,
         rows: selectedTemplate.rows,
@@ -492,6 +492,13 @@ export const WorkspaceCreationModal: React.FC<WorkspaceCreationModalProps> = ({
         agentAssignments: finalAgentAssignments,
         templateId: selectedTemplate.id,
       });
+
+      // Check if workspace was created successfully
+      if (!workspace) {
+        alert('⚠️ Lỗi khi tạo workspace: Không thể tạo workspace mới. Vui lòng thử lại.');
+        return;
+      }
+
       setCurrentWorkspace(workspace);
 
       // Auto-spawn all terminals after a short delay

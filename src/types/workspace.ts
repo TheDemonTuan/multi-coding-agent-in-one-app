@@ -93,9 +93,9 @@ export interface WorkspaceState {
 
   isTerminalRestarting: (terminalId: string) => boolean;
   setCurrentWorkspace: (workspace: WorkspaceLayout | null) => void;
-  addWorkspace: (config: WorkspaceCreationConfig) => WorkspaceLayout;
+  addWorkspace: (config: WorkspaceCreationConfig) => Promise<WorkspaceLayout>;
   removeWorkspace: (id: string) => Promise<void>;
-  updateWorkspace: (id: string, updates: Partial<WorkspaceLayout>) => void;
+  updateWorkspace: (id: string, updates: Partial<WorkspaceLayout>) => Promise<void>;
   setActiveTerminal: (id: string | null) => void;
   setTheme: (theme: 'dark' | 'light') => void;
   setWorkspaceModalOpen: (isOpen: boolean) => void;
@@ -108,7 +108,7 @@ export interface WorkspaceState {
   restartTerminal: (terminalId: string) => Promise<void>;
   switchTerminalAgent: (terminalId: string, newAgentType: string) => Promise<void>;
 
-  loadWorkspaces: () => void;
+  loadWorkspaces: () => Promise<void>;
   saveWorkspaces: () => void;
 
   getNextWorkspace: () => WorkspaceLayout | null;

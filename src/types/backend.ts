@@ -19,17 +19,18 @@ export interface VietnameseImePatchResult {
 }
 
 export interface VietnameseImeStatus {
-  claudeCodeInstalled: boolean;
   isPatched: boolean;
+  claudePath: string;
+  hasBackup: boolean;
+  installedVia: 'bun' | 'npm' | 'pnpm' | 'binary' | 'unknown';
   version?: string;
-  claudePath?: string;
-  hasBackup?: boolean;
-  installedVia?: 'bun' | 'npm' | 'binary' | 'unknown';
-  error?: string;
 }
 
 export interface PatchValidation {
   isValid: boolean;
+  isPatched?: boolean;
+  issues?: string[];
+  suggestions?: string[];
   reason?: string;
 }
 

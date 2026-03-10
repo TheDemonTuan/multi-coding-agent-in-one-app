@@ -15,7 +15,7 @@ class WorkspaceServiceClass {
    * Load all workspaces from storage
    */
   async loadWorkspaces(): Promise<WorkspaceLayout[]> {
-    this.log.info('Loading workspaces from storage');
+    this.log.info('Loading workspaces from backend');
 
     if (!isWailsAvailable()) {
       this.log.warn('backendAPI not available');
@@ -23,14 +23,14 @@ class WorkspaceServiceClass {
     }
 
     try {
-      const workspaces = await backendAPI.getStoreValue(STORAGE_KEYS.WORKSPACES);
+      const workspaces = await backendAPI.getWorkspaces();
 
       if (workspaces && Array.isArray(workspaces)) {
         this.log.info('Loaded workspaces', { count: workspaces.length });
         return workspaces as WorkspaceLayout[];
       }
 
-      this.log.info('No workspaces found in storage');
+      this.log.info('No workspaces found in backend');
       return [];
     } catch (error: any) {
       this.log.error('Failed to load workspaces', { error: error.message });
@@ -40,28 +40,11 @@ class WorkspaceServiceClass {
 
   /**
    * Save workspaces to storage
+   * @deprecated Workspaces are now saved individually via CRUD methods
    */
-  async saveWorkspaces(workspaces: WorkspaceLayout[]): Promise<boolean> {
-    this.log.info('Saving workspaces to storage', { count: workspaces.length });
-
-    if (!isWailsAvailable()) {
-      return false;
-    }
-
-    try {
-      const result = await backendAPI.setStoreValue(STORAGE_KEYS.WORKSPACES, workspaces);
-
-      if (result.success) {
-        this.log.info('Workspaces saved successfully');
-      } else {
-        this.log.error('Failed to save workspaces', { error: result.error });
-      }
-
-      return result.success;
-    } catch (error: any) {
-      this.log.error('Error saving workspaces', { error: error.message });
-      return false;
-    }
+  async saveWorkspaces(_workspaces: WorkspaceLayout[]): Promise<boolean> {
+    this.log.warn('saveWorkspaces is deprecated - use individual CRUD methods');
+    return true;
   }
 
   /**
