@@ -48,6 +48,7 @@ func main() {
 		Title:  "TDT Space",
 		Width:  1400,
 		Height: 900,
+		WindowStartState: options.Maximised,
 		AssetServer: &assetserver.Options{
 			Assets: assets,
 		},

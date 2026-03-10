@@ -12,6 +12,7 @@ import { TerminalContextMenu } from './TerminalContextMenu';
 import { ScrollToBottomButton } from '../ui/ScrollToBottomButton';
 import { TerminalSearch } from './TerminalSearch';
 import { parseOSC133, CommandBlockTracker } from '../../lib/osc133Parser';
+import { backendAPI, isWailsAvailable } from '../../services/wails-bridge';
 
 // Theme constants - VS Code / xterm.js recommended dark terminal colors
 const DARK_THEME = {
@@ -162,7 +163,7 @@ export const TerminalCell = React.memo<TerminalCellProps>(({
     if (terminal.agent?.type === 'claude-code') {
       const checkPatch = async () => {
         try {
-          const status = await window.electronAPI?.checkVietnameseImePatchStatus();
+          const status = await backendAPI.checkVietnameseImePatchStatus();
           setVnPatched(status?.isPatched || false);
         } catch (err) {
           console.error('[TerminalCell] Failed to check VN patch:', err);
@@ -171,7 +172,7 @@ export const TerminalCell = React.memo<TerminalCellProps>(({
       checkPatch();
 
       // Re-check when patch is applied (for auto-patch)
-      const unsubscribe = window.electronAPI?.onVietnameseImePatchApplied(() => {
+      const unsubscribe = backendAPI.onVietnameseImePatchApplied(() => {
         setTimeout(() => checkPatch(), 1500); // Wait 1.5s for patch to complete
       });
 
@@ -207,7 +208,7 @@ export const TerminalCell = React.memo<TerminalCellProps>(({
       case 'paste':
         if (terminalRef.current) {
           navigator.clipboard.readText().then((text) => {
-            (window as any).electronAPI?.terminalWrite(terminal.id, text);
+            backendAPI.terminalWrite(terminal.id, text);
           });
         }
         break;
@@ -347,7 +348,7 @@ export const TerminalCell = React.memo<TerminalCellProps>(({
 
       if (filePaths.length > 0 && terminalRef.current) {
         const pathString = filePaths.join(' ');
-        (window as any).electronAPI?.terminalWrite(terminal.id, pathString);
+        backendAPI.terminalWrite(terminal.id, pathString);
       }
     }
   }, [terminal.id]);
@@ -395,9 +396,8 @@ export const TerminalCell = React.memo<TerminalCellProps>(({
     if (!containerRef.current) return;
     if (hasInitializedRef.current) return;
 
-    if (!(window as any).electronAPI) {
-      updateTerminalStatus(terminal.id, 'error');
-      return;
+    if (!isWailsAvailable() && typeof (window as any).go === 'undefined') {
+      // Allow stub bridge in dev; only bail out if neither Wails nor stub is ready
     }
 
     if (containerRef.current) {
@@ -420,6 +420,12 @@ export const TerminalCell = React.memo<TerminalCellProps>(({
       // Smooth scrolling improvements
       fastScrollSensitivity: 5,
       smoothScrollDuration: 125,
+
+      // Windows/ConPTY specific fixes to prevent text duplication/scrambling
+      // macOptionIsMeta: false prevents double character input on some systems
+      macOptionIsMeta: false,
+      // Better handling of wide characters (CJK, emoji)
+      allowTransparency: false,
     });
 
     const fitAddon = new FitAddon();
@@ -434,15 +440,20 @@ export const TerminalCell = React.memo<TerminalCellProps>(({
     // Try to enable GPU-accelerated WebGL rendering (up to ~900% faster than Canvas).
     // Falls back gracefully to Canvas 2D renderer if WebGL is unavailable
     // (e.g., headless environments, GPU virtualization, or driver issues).
-    try {
-      const webglAddon = new WebglAddon();
-      webglAddon.onContextLoss(() => {
-        webglAddon.dispose();
-        webglAddonRef.current = null;
-      });
-      term.loadAddon(webglAddon);
-      webglAddonRef.current = webglAddon;
-    } catch (err) {
+    // Note: On Windows with ConPTY, WebGL can sometimes cause text scrambling,
+    // so we only enable it on non-Windows platforms.
+    const isWindows = navigator.platform.toLowerCase().includes('win');
+    if (!isWindows) {
+      try {
+        const webglAddon = new WebglAddon();
+        webglAddon.onContextLoss(() => {
+          webglAddon.dispose();
+          webglAddonRef.current = null;
+        });
+        term.loadAddon(webglAddon);
+        webglAddonRef.current = webglAddon;
+      } catch (err) {
+      }
     }
 
     // Delay initial fit to ensure container has proper dimensions
@@ -456,7 +467,7 @@ export const TerminalCell = React.memo<TerminalCellProps>(({
           // Update PTY with initial size
           const { cols, rows } = term;
           lastDimensionsRef.current = { cols, rows };
-          (window as any).electronAPI?.terminalResize(terminal.id, cols, rows);
+          backendAPI.terminalResize(terminal.id, cols, rows);
 
           // Mark initial fit as complete and flush buffered data
           isInitialFitCompleteRef.current = true;
@@ -500,10 +511,14 @@ export const TerminalCell = React.memo<TerminalCellProps>(({
             lastDimensionsRef.current.cols !== cols ||
             lastDimensionsRef.current.rows !== rows) {
             lastDimensionsRef.current = { cols, rows };
-            (window as any).electronAPI.terminalResize(terminal.id, cols, rows);
+            // Add small delay to let xterm.js finish rendering before notifying PTY
+            // This helps prevent text scrambling during resize on Windows ConPTY
+            setTimeout(() => {
+              backendAPI.terminalResize(terminal.id, cols, rows);
+            }, 10);
           }
         }
-      }, 150); // 150ms debounce delay (VAL-PERF-001: 100-200ms range)
+      }, 200); // 200ms debounce to prevent rapid resize events (increased from 150ms)
     });
     resizeObserverRef.current.observe(containerRef.current);
 
@@ -517,15 +532,19 @@ export const TerminalCell = React.memo<TerminalCellProps>(({
 
     // Setup event listeners (VAL-MEM-003)
 
-    listenersRef.current.unsubscribeData = (window as any).electronAPI.onTerminalData(({ id, data }: { id: string; data: string }) => {
-      if (id === terminal.id && terminalRef.current) {
+    listenersRef.current.unsubscribeData = backendAPI.onTerminalData((event: { terminalId: string; data: string }) => {
+      console.log('[TerminalCell] Received terminal-data event:', event.terminalId, 'length:', event.data?.length);
+      if (event.terminalId === terminal.id && terminalRef.current) {
+        // Debug logging
+        console.log('[TerminalCell] Processing data for', event.terminalId, 'length:', event.data.length, 'fitComplete:', isInitialFitCompleteRef.current);
+        
         // Fast-path: only invoke OSC 133 parser if escape sequence is present.
         // The regex scan avoids garbage on every keystroke in terminals that
         // don't emit shell-integration markers (the common case).
-        const hasOSC = data.includes('\x1b]133;');
-        let outputData = data;
+        const hasOSC = event.data.includes('\x1b]133;');
+        let outputData = event.data;
         if (hasOSC) {
-          const { cleaned, markers } = parseOSC133(data);
+          const { cleaned, markers } = parseOSC133(event.data);
           if (markers.length > 0) {
             commandBlockTrackerRef.current?.processMarkers(markers);
             outputData = cleaned;
@@ -534,6 +553,7 @@ export const TerminalCell = React.memo<TerminalCellProps>(({
 
         // Buffer data until initial fit is complete to prevent garbled output
         if (!isInitialFitCompleteRef.current) {
+          console.log('[TerminalCell] Buffering data, buffer size:', dataBufferRef.current.length);
           dataBufferRef.current.push(outputData);
           return;
         }
@@ -546,8 +566,10 @@ export const TerminalCell = React.memo<TerminalCellProps>(({
       }
     });
 
-    listenersRef.current.unsubscribeStarted = (window as any).electronAPI.onTerminalStarted(({ id }: { id: string }) => {
-      if (id === terminal.id) {
+    listenersRef.current.unsubscribeStarted = backendAPI.onTerminalStarted((event: { terminalId: string; pid?: number }) => {
+      console.log('[TerminalCell] Received terminal-started event:', event.terminalId);
+      if (event.terminalId === terminal.id) {
+        console.log('[TerminalCell] Processing terminal-started for:', event.terminalId);
         updateTerminalStatus(terminal.id, 'running');
         setHasStarted(true);
         terminalRef.current?.focus();
@@ -558,24 +580,24 @@ export const TerminalCell = React.memo<TerminalCellProps>(({
           try {
             fitAddonRef.current.fit();
             const { cols, rows } = terminalRef.current;
-            (window as any).electronAPI?.terminalResize(terminal.id, cols, rows);
+            backendAPI.terminalResize(terminal.id, cols, rows);
           } catch (err) {
           }
         }
       }
     });
 
-    listenersRef.current.unsubscribeExit = (window as any).electronAPI.onTerminalExit(({ id, code, signal }: { id: string; code: number | null; signal?: string }) => {
-      if (id === terminal.id) {
+    listenersRef.current.unsubscribeExit = backendAPI.onTerminalExit((event: { terminalId: string; code: number | null; signal?: string }) => {
+      if (event.terminalId === terminal.id) {
         // Skip exit processing if terminal is restarting (prevents race condition setting status to stopped)
         if (isTerminalRestarting(terminal.id)) {
           return;
         }
 
-        const exitMessage = code !== null && code !== undefined
-          ? `Terminal exited with code ${code}`
-          : signal
-            ? `Terminal exited (signal: ${signal})`
+        const exitMessage = event.code !== null && event.code !== undefined
+          ? `Terminal exited with code ${event.code}`
+          : event.signal
+            ? `Terminal exited (signal: ${event.signal})`
             : 'Terminal exited';
         terminalRef.current?.write(`\r\n\x1b[33m${exitMessage}\x1b[0m\r\n`);
         updateTerminalStatus(terminal.id, 'stopped');
@@ -583,11 +605,13 @@ export const TerminalCell = React.memo<TerminalCellProps>(({
     });
 
 
-    listenersRef.current.unsubscribeError = (window as any).electronAPI.onTerminalError(({ id, error }: { id: string; error: string }) => {
-      if (id === terminal.id) {
-        terminalRef.current?.write(`\r\n\x1b[31m❌ Error: ${error}\x1b[0m\r\n`);
+    listenersRef.current.unsubscribeError = backendAPI.onTerminalError((event: { terminalId: string; error: string }) => {
+      console.log('[TerminalCell] Received terminal-error event:', event.terminalId, event.error);
+      if (event.terminalId === terminal.id) {
+        console.log('[TerminalCell] Processing error for terminal:', event.terminalId);
+        terminalRef.current?.write(`\r\n\x1b[31m❌ Error: ${event.error}\x1b[0m\r\n`);
         updateTerminalStatus(terminal.id, 'error');
-        setSpawnError(error);
+        setSpawnError(event.error);
 
         // Auto-hide error toast after 10 seconds
         const timer = setTimeout(() => setSpawnError(null), 10000);
@@ -597,7 +621,7 @@ export const TerminalCell = React.memo<TerminalCellProps>(({
 
     // Store onData handler disposable (VAL-MEM-004)
     xtermDisposablesRef.current.onDataDisposable = term.onData((data: string) => {
-      (window as any).electronAPI.terminalWrite(terminal.id, data);
+      backendAPI.terminalWrite(terminal.id, data);
     });
 
 
@@ -681,7 +705,7 @@ export const TerminalCell = React.memo<TerminalCellProps>(({
       if ((e.ctrlKey || e.metaKey) && e.key === 'v') {
         e.preventDefault();
         navigator.clipboard.readText().then((text) => {
-          (window as any).electronAPI?.terminalWrite(terminal.id, text);
+          backendAPI.terminalWrite(terminal.id, text);
         });
         return false;
       }
@@ -698,25 +722,68 @@ export const TerminalCell = React.memo<TerminalCellProps>(({
     // Spawn terminal process
     const workspaceId = currentWorkspace?.id;
 
-    const spawnPromise = terminal.agent?.enabled && terminal.agent.type !== 'none'
-      ? (window as any).electronAPI.spawnTerminalWithAgent(terminal.id, terminal.cwd, terminal.agent, workspaceId)
-      : (window as any).electronAPI.spawnTerminal(terminal.id, terminal.cwd, workspaceId);
+    // Timeout for terminal-started event (Change 3 from plan)
+    const startTimeout = setTimeout(() => {
+      // Only trigger timeout if terminal hasn't started yet
+      if (!hasStarted) {
+        updateTerminalStatus(terminal.id, 'error');
+        const timeoutMsg = `Terminal ${terminal.agent?.type || 'process'} failed to start within 5 seconds`;
+        setSpawnError(timeoutMsg);
+        term.write(`\r\n\x1b[31m❌ ${timeoutMsg}\x1b[0m\r\n`);
+        const timer = setTimeout(() => setSpawnError(null), 10000);
+        errorToastTimersRef.current.push(timer);
+      }
+    }, 5000);
 
+    const spawnPromise = terminal.agent?.enabled && terminal.agent.type !== 'none'
+      ? backendAPI.spawnTerminalWithAgent(terminal.id, terminal.cwd, terminal.agent, workspaceId)
+      : backendAPI.spawnTerminal(terminal.id, terminal.cwd, workspaceId);
+
+    console.log('[TerminalCell] Spawn promise started for:', terminal.id, terminal.agent?.type);
+    console.log('[TerminalCell] BackendAPI available:', isWailsAvailable());
     spawnPromise
       .then((result: any) => {
+        console.log('[TerminalCell] Spawn promise resolved for:', terminal.id, result);
+        // Clear timeout on spawn response
+        clearTimeout(startTimeout);
+
         if (result?.pid) {
+          console.log('[TerminalCell] Spawn succeeded with PID:', result.pid);
           setTerminalProcessId(terminal.id, result.pid);
+          // Note: Don't update status to 'running' here - wait for terminal-started event
+          // This ensures status is only updated when event is actually received
+          console.log('[TerminalCell] Waiting for terminal-started event to update status');
+
+          // Status reconciliation: query backend if we missed the terminal-started event
+          setTimeout(() => {
+            if (terminal.status === 'stopped') {
+              backendAPI.getTerminalStatus(terminal.id).then((status) => {
+                console.log('[TerminalCell] Status reconciliation:', terminal.id, status);
+                if (status.exists && status.status === 'running') {
+                  updateTerminalStatus(terminal.id, 'running');
+                  setHasStarted(true);
+                }
+              });
+            }
+          }, 1000); // Wait 1s for event, then reconcile
 
         } else if (result?.success === false && result?.error) {
           // Handle validation errors from main process
+          console.log('[TerminalCell] Spawn failed with error:', result.error);
           setSpawnError(result.error);
           updateTerminalStatus(terminal.id, 'error');
           term.write(`\r\n\x1b[31m❌ ${result.error}\x1b[0m\r\n`);
           const timer = setTimeout(() => setSpawnError(null), 10000);
           errorToastTimersRef.current.push(timer);
+        } else {
+          console.log('[TerminalCell] Spawn resolved with unexpected result:', result);
         }
       })
       .catch((err: any) => {
+        console.log('[TerminalCell] Spawn promise rejected for:', terminal.id, err);
+        // Clear timeout on spawn error
+        clearTimeout(startTimeout);
+        
         updateTerminalStatus(terminal.id, 'error');
         const errorMsg = err?.message || String(err);
         setSpawnError(errorMsg);
@@ -766,14 +833,11 @@ export const TerminalCell = React.memo<TerminalCellProps>(({
       listenersRef.current = {};
 
 
-      // Kill PTY process in main process BEFORE disposing UI terminal
+      // Kill PTY process BEFORE disposing UI terminal
       // This ensures the process is terminated and won't send more data
-      if (typeof window !== 'undefined' && (window as any).electronAPI) {
-        // Synchronously fire-and-forget to avoid await delays during cleanup
-        (window as any).electronAPI.terminalKill(terminal.id).catch((err: any) => {
-
-        });
-      }
+      backendAPI.terminalKill(terminal.id).catch((_err: any) => {
+        // fire-and-forget; ignore errors during cleanup
+      });
 
       // Dispose xterm.js event handlers (VAL-MEM-004)
       // Must be done BEFORE terminal.dispose() to properly detach all handlers

@@ -4,7 +4,8 @@
  */
 
 import { logger } from '../lib/logger';
-import { IPC_CHANNELS, STORAGE_KEYS } from '../config/constants';
+import { STORAGE_KEYS } from '../config/constants';
+import { backendAPI, isWailsAvailable } from './wails-bridge';
 import type { WorkspaceLayout, WorkspaceCreationConfig } from '../types/workspace';
 
 class WorkspaceServiceClass {
@@ -16,17 +17,17 @@ class WorkspaceServiceClass {
   async loadWorkspaces(): Promise<WorkspaceLayout[]> {
     this.log.info('Loading workspaces from storage');
 
-    if (!this.isElectronAPIAvailable()) {
-      this.log.warn('electronAPI not available');
+    if (!isWailsAvailable()) {
+      this.log.warn('backendAPI not available');
       return [];
     }
 
     try {
-      const workspaces = await (window as any).electronAPI[IPC_CHANNELS.GET_STORE_VALUE](STORAGE_KEYS.WORKSPACES);
-      
+      const workspaces = await backendAPI.getStoreValue(STORAGE_KEYS.WORKSPACES);
+
       if (workspaces && Array.isArray(workspaces)) {
         this.log.info('Loaded workspaces', { count: workspaces.length });
-        return workspaces;
+        return workspaces as WorkspaceLayout[];
       }
 
       this.log.info('No workspaces found in storage');
@@ -43,16 +44,13 @@ class WorkspaceServiceClass {
   async saveWorkspaces(workspaces: WorkspaceLayout[]): Promise<boolean> {
     this.log.info('Saving workspaces to storage', { count: workspaces.length });
 
-    if (!this.isElectronAPIAvailable()) {
+    if (!isWailsAvailable()) {
       return false;
     }
 
     try {
-      const result = await (window as any).electronAPI[IPC_CHANNELS.SET_STORE_VALUE](
-        STORAGE_KEYS.WORKSPACES,
-        workspaces
-      );
-      
+      const result = await backendAPI.setStoreValue(STORAGE_KEYS.WORKSPACES, workspaces);
+
       if (result.success) {
         this.log.info('Workspaces saved successfully');
       } else {
@@ -72,13 +70,13 @@ class WorkspaceServiceClass {
   async createWorkspace(config: WorkspaceCreationConfig): Promise<WorkspaceLayout | null> {
     this.log.info('Creating workspace', { name: config.name, columns: config.columns, rows: config.rows });
 
-    if (!this.isElectronAPIAvailable()) {
+    if (!isWailsAvailable()) {
       return null;
     }
 
     try {
-      const workspace = await (window as any).electronAPI[IPC_CHANNELS.CREATE_WORKSPACE](config);
-      
+      const workspace = await backendAPI.createWorkspace(config);
+
       if (workspace) {
         this.log.info('Workspace created', { id: workspace.id, name: workspace.name });
       } else {
@@ -98,13 +96,13 @@ class WorkspaceServiceClass {
   async deleteWorkspace(id: string): Promise<boolean> {
     this.log.info('Deleting workspace', { id });
 
-    if (!this.isElectronAPIAvailable()) {
+    if (!isWailsAvailable()) {
       return false;
     }
 
     try {
-      const result = await (window as any).electronAPI[IPC_CHANNELS.DELETE_WORKSPACE]({ id });
-      
+      const result = await backendAPI.deleteWorkspace(id);
+
       if (result.success) {
         this.log.info('Workspace deleted', { id });
       } else {
@@ -124,13 +122,13 @@ class WorkspaceServiceClass {
   async switchWorkspace(id: string): Promise<WorkspaceLayout | null> {
     this.log.info('Switching to workspace', { id });
 
-    if (!this.isElectronAPIAvailable()) {
+    if (!isWailsAvailable()) {
       return null;
     }
 
     try {
-      const workspace = await (window as any).electronAPI[IPC_CHANNELS.SWITCH_WORKSPACE]({ id });
-      
+      const workspace = await backendAPI.switchWorkspace(id);
+
       if (workspace) {
         this.log.info('Switched to workspace', { name: workspace.name });
       } else {
@@ -150,28 +148,20 @@ class WorkspaceServiceClass {
   async cleanupWorkspaceTerminals(workspaceId: string): Promise<{ success: boolean; cleaned: number }> {
     this.log.info('Cleaning up workspace terminals', { workspaceId });
 
-    if (!this.isElectronAPIAvailable()) {
+    if (!isWailsAvailable()) {
       return { success: false, cleaned: 0 };
     }
 
     try {
-      const result = await (window as any).electronAPI[IPC_CHANNELS.CLEANUP_WORKSPACE_TERMINALS]({
-        workspaceId,
-      });
-      
-      this.log.info('Cleanup complete', { cleaned: result.cleaned });
-      return result;
+      const result = await backendAPI.cleanupWorkspaceTerminals(workspaceId);
+
+      const cleaned = result.cleaned ?? 0;
+      this.log.info('Cleanup complete', { cleaned });
+      return { success: result.success, cleaned };
     } catch (error: any) {
       this.log.error('Error cleaning up workspace terminals', { workspaceId, error: error.message });
       return { success: false, cleaned: 0 };
     }
-  }
-
-  /**
-   * Check if electronAPI is available
-   */
-  private isElectronAPIAvailable(): boolean {
-    return typeof window !== 'undefined' && !!(window as any).electronAPI;
   }
 }
 

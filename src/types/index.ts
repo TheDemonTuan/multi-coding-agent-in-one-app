@@ -1,11 +1,45 @@
-// Type exports - use specific imports to avoid conflicts
-// Example: import type { WorkspaceLayout } from './workspace';
-//          import type { TerminalPane } from './terminal';
-//          import type { AgentConfig } from './agent';
+/**
+ * Unified Type Exports for TDT Space
+ * 
+ * Import từ file này thay vì import từ các file riêng lẻ
+ * Giúp tránh circular imports và consolidate types
+ */
 
-// Re-export commonly used types with explicit naming to avoid conflicts
-export type { WorkspaceState, WorkspaceLayout, TerminalPane as WorkspaceTerminalPane, WorkspaceCreationConfig, AgentConfig as WorkspaceAgentConfig, AgentType as WorkspaceAgentType, Template, AgentAllocation } from './workspace';
-export type { TerminalPane, TerminalStatus, TerminalProcess, TerminalDataEvent, TerminalExitEvent, TerminalResizeOptions, TerminalSpawnOptions } from './terminal';
-export type { AgentConfig, AgentSpawnOptions, AgentState } from './agent';
-export type * from './ipc';
+// Core types (ưu tiên sử dụng các types này)
+export type { AgentType, AgentConfig, AgentSpawnOptions, AgentState } from './agent';
+
+export type {
+  TerminalStatus,
+  TerminalPane,
+  TerminalProcess,
+  TerminalDataEvent,
+  TerminalExitEvent,
+  TerminalResizeOptions,
+  TerminalSpawnOptions,
+} from './terminal';
+
+export type {
+  AgentType as WorkspaceAgentType,
+  AgentConfig as WorkspaceAgentConfig,
+  AgentAllocation,
+  LayoutType,
+  Template,
+  TerminalPane as WorkspaceTerminalPane,
+  WorkspaceLayout,
+  WorkspaceCreationConfig,
+  WorkspaceState,
+} from './workspace';
+
+// Backend API types
+export type {
+  VietnameseImePatchResult,
+  VietnameseImeStatus,
+  VietnameseImeSettings,
+  PatchValidation,
+  PatchLog,
+  OpenDialogOptions,
+  OpenDialogReturnValue,
+} from './backend';
+
+// Legacy exports (deprecated - use specific imports instead)
 export type { ElectronAPI } from './electron';

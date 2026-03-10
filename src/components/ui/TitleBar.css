@@ -8,6 +8,8 @@
   border-bottom: 1px solid #313244;
   user-select: none;
   height: 44px;
+  /* Wails v2 frameless window drag */
+  --wails-draggable: drag;
   -webkit-app-region: drag;
 }
 
@@ -85,6 +87,7 @@
   color: #cdd6f4;
   cursor: pointer;
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  --wails-draggable: no-drag;
   -webkit-app-region: no-drag;
 }
 
@@ -112,6 +115,7 @@
   font-size: 12px;
   cursor: pointer;
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  --wails-draggable: no-drag;
   -webkit-app-region: no-drag;
 }
 

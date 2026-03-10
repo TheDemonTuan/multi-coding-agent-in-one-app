@@ -17,7 +17,7 @@ export interface TerminalPane {
 }
 
 export interface TerminalProcess {
-  ptyProcess: any;
+  ptyProcess: unknown;
   cwd: string;
   agentType?: string;
   workspaceId?: string;

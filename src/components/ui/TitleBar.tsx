@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useWorkspaceStore } from '../../stores/workspaceStore';
+import { backendAPI } from '../../services/wails-bridge';
 import './TitleBar.css';
 
 export const TitleBar: React.FC = () => {
@@ -8,12 +9,12 @@ export const TitleBar: React.FC = () => {
 
   useEffect(() => {
     // Detect platform to conditionally show/hide custom window controls
-    window.electronAPI?.getPlatform().then((p: string) => setIsMac(p === 'darwin')).catch(() => { });
+    backendAPI.getPlatform().then((p: string) => setIsMac(p === 'darwin')).catch(() => { });
   }, []);
 
-  const handleMinimize = () => window.electronAPI?.windowMinimize();
-  const handleMaximize = () => window.electronAPI?.windowMaximize();
-  const handleClose = () => window.electronAPI?.windowClose();
+  const handleMinimize = () => backendAPI.windowMinimize();
+  const handleMaximize = () => backendAPI.windowMaximize();
+  const handleClose = () => backendAPI.windowClose();
 
   return (
     <div className={`title-bar${isMac ? ' macos' : ''}`}>

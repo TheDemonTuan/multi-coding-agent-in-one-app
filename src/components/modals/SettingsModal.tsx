@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { AgentInstallGuide } from '../agents/AgentInstallGuide';
+import { backendAPI, isWailsAvailable } from '../../services/wails-bridge';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -63,12 +64,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
 
   // Load Vietnamese IME settings on mount
   useEffect(() => {
-    if (isOpen && typeof window !== 'undefined' && (window as any).electronAPI) {
-      (window as any).electronAPI.getVietnameseImeSettings().then((vn: VietnameseImeSettings) => {
+    if (isOpen && isWailsAvailable()) {
+      backendAPI.getVietnameseImeSettings().then((vn: VietnameseImeSettings) => {
         setVietnameseImeSettings(vn || defaultVietnameseImeSettings);
       }).catch((err: any) => console.error('[SettingsModal] Failed to load VN IME settings:', err));
 
-      (window as any).electronAPI.checkVietnameseImePatchStatus().then((status: any) => {
+      backendAPI.checkVietnameseImePatchStatus().then((status: any) => {
         setPatchStatus(status);
       }).catch((err: any) => {
         console.error('[SettingsModal] Failed to check VN IME patch status:', err);
@@ -78,9 +79,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
   }, [isOpen]);
 
   const handleSave = () => {
-    if (typeof window !== 'undefined' && (window as any).electronAPI) {
-      (window as any).electronAPI.setStoreValue('terminal-settings', settings);
-      (window as any).electronAPI.setVietnameseImeSettings(vietnameseImeSettings);
+    if (isWailsAvailable()) {
+      backendAPI.setStoreValue('terminal-settings', settings);
+      backendAPI.setVietnameseImeSettings(vietnameseImeSettings);
     }
     onClose();
   };
@@ -89,7 +90,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
     setIsPatching(true);
     setPatchMessage(null);
     try {
-      const result = await (window as any).electronAPI.applyVietnameseImePatch();
+      const result = await backendAPI.applyVietnameseImePatch();
       if (result.success) {
         let msg = '✅ Patch Applied!\n';
         if (result.version) msg += `• Version: v${result.version}\n`;
@@ -113,7 +114,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
     setIsPatching(true);
     setPatchMessage(null);
     try {
-      const result = await (window as any).electronAPI.restoreVietnameseImePatch();
+      const result = await backendAPI.restoreVietnameseImePatch();
       setPatchMessage(result.success ? '✓ Restored! Restart terminals to test.' : `✗ ${result.message}`);
       if (result.success) setPatchStatus((p: any) => ({...p, isPatched: false}));
     } catch (err: any) {
@@ -248,11 +249,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
 
               <div style={styles.settingsSection}>
                 <label style={styles.checkboxLabel}>
-                  <input type="checkbox" checked={vietnameseImeSettings.enabled} onChange={(e) => {const v = {...vietnameseImeSettings, enabled: e.target.checked}; setVietnameseImeSettings(v); (window as any).electronAPI.setVietnameseImeSettings(v);}} />
+                  <input type="checkbox" checked={vietnameseImeSettings.enabled} onChange={(e) => {const v = {...vietnameseImeSettings, enabled: e.target.checked}; setVietnameseImeSettings(v); backendAPI.setVietnameseImeSettings(v);}} />
                   <span>Enable Vietnamese IME Fix</span>
                 </label>
                 <label style={styles.checkboxLabel}>
-                  <input type="checkbox" checked={vietnameseImeSettings.autoPatch} onChange={(e) => {const v = {...vietnameseImeSettings, autoPatch: e.target.checked}; setVietnameseImeSettings(v); (window as any).electronAPI.setVietnameseImeSettings(v);}} disabled={!vietnameseImeSettings.enabled} />
+                  <input type="checkbox" checked={vietnameseImeSettings.autoPatch} onChange={(e) => {const v = {...vietnameseImeSettings, autoPatch: e.target.checked}; setVietnameseImeSettings(v); backendAPI.setVietnameseImeSettings(v);}} disabled={!vietnameseImeSettings.enabled} />
                   <span style={{opacity: vietnameseImeSettings.enabled ? 1 : 0.5}}>Auto-patch when spawning Claude Code</span>
                 </label>
               </div>

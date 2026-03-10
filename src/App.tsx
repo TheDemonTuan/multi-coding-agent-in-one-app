@@ -1,6 +1,6 @@
 import React, { useEffect, useCallback, useState } from 'react';
 import { TitleBar, TerminalGrid, WorkspaceTabBar, WorkspaceSwitcherModal, SettingsModal, WorkspaceCreationModal } from './components';
-import { useWorkspaceStore } from './stores';
+import { useWorkspaceStore, initializePlatformInfo } from './stores';
 import { getAppVersion } from './utils/version';
 import { useWorkspaceNavigation } from './hooks';
 
@@ -33,6 +33,11 @@ function App() {
   // Load app version
   useEffect(() => {
     getAppVersion().then(setAppVersion);
+  }, []);
+
+  // Initialize platform info from backend (lazy initialization to avoid timing issues with Wails runtime)
+  useEffect(() => {
+    initializePlatformInfo();
   }, []);
 
   // Load workspaces from electron-store on mount (only once)

@@ -1,12 +1,12 @@
 /**
  * Terminal Service
- * Handles terminal lifecycle management
+ * Handles terminal lifecycle management using the Wails backend via backendAPI.
  */
 
 import { logger } from '../lib/logger';
-import { IPC_CHANNELS } from '../config/constants';
 import type { TerminalPane, TerminalStatus } from '../types/terminal';
 import type { AgentConfig } from '../types/agent';
+import { backendAPI } from './wails-bridge';
 
 interface TerminalServiceState {
   terminals: Map<string, TerminalPane>;
@@ -34,16 +34,8 @@ class TerminalServiceClass {
   ): Promise<{ success: boolean; pid?: number; error?: string }> {
     this.log.info('Spawning terminal', { id, cwd, workspaceId });
 
-    if (!this.isElectronAPIAvailable()) {
-      return { success: false, error: 'electronAPI not available' };
-    }
-
     try {
-      const result = await (window as any).electronAPI[IPC_CHANNELS.SPAWN_TERMINAL]({
-        id,
-        cwd,
-        workspaceId,
-      });
+      const result = await backendAPI.spawnTerminal(id, cwd, workspaceId);
 
       if (result.success) {
         this.updateTerminalStatus(id, 'running');
@@ -70,17 +62,8 @@ class TerminalServiceClass {
   ): Promise<{ success: boolean; pid?: number; error?: string }> {
     this.log.info('Spawning terminal with agent', { id, cwd, agentConfig, workspaceId });
 
-    if (!this.isElectronAPIAvailable()) {
-      return { success: false, error: 'electronAPI not available' };
-    }
-
     try {
-      const result = await (window as any).electronAPI[IPC_CHANNELS.SPAWN_TERMINAL_WITH_AGENT]({
-        id,
-        cwd,
-        agentConfig,
-        workspaceId,
-      });
+      const result = await backendAPI.spawnTerminalWithAgent(id, cwd, agentConfig, workspaceId);
 
       if (result.success) {
         this.updateTerminalStatus(id, 'running');
@@ -100,15 +83,8 @@ class TerminalServiceClass {
    * Write data to terminal
    */
   async writeToTerminal(id: string, data: string): Promise<boolean> {
-    if (!this.isElectronAPIAvailable()) {
-      return false;
-    }
-
     try {
-      const result = await (window as any).electronAPI[IPC_CHANNELS.TERMINAL_WRITE]({
-        id,
-        data,
-      });
+      const result = await backendAPI.terminalWrite(id, data);
       return result.success;
     } catch (error: any) {
       this.log.error('Error writing to terminal', { id, error: error.message });
@@ -122,13 +98,9 @@ class TerminalServiceClass {
   async killTerminal(id: string): Promise<boolean> {
     this.log.info('Killing terminal', { id });
 
-    if (!this.isElectronAPIAvailable()) {
-      return false;
-    }
-
     try {
-      const result = await (window as any).electronAPI[IPC_CHANNELS.TERMINAL_KILL]({ id });
-      
+      const result = await backendAPI.terminalKill(id);
+
       if (result.success) {
         this.updateTerminalStatus(id, 'killed');
         this.log.info('Terminal killed successfully', { id });
@@ -147,16 +119,8 @@ class TerminalServiceClass {
    * Resize terminal
    */
   async resizeTerminal(id: string, cols: number, rows: number): Promise<void> {
-    if (!this.isElectronAPIAvailable()) {
-      return;
-    }
-
     try {
-      await (window as any).electronAPI[IPC_CHANNELS.TERMINAL_RESIZE]({
-        id,
-        cols,
-        rows,
-      });
+      await backendAPI.terminalResize(id, cols, rows);
       this.log.debug('Terminal resized', { id, cols, rows });
     } catch (error: any) {
       this.log.error('Error resizing terminal', { id, error: error.message });
@@ -230,13 +194,6 @@ class TerminalServiceClass {
     if (this.state.activeTerminalId === id) {
       this.state.activeTerminalId = null;
     }
-  }
-
-  /**
-   * Check if electronAPI is available
-   */
-  private isElectronAPIAvailable(): boolean {
-    return typeof window !== 'undefined' && !!(window as any).electronAPI;
   }
 }
 

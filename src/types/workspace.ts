@@ -15,28 +15,27 @@ export type AgentType =
 
 export interface AgentConfig {
   type: AgentType;
-  command?: string; // Custom command override
-  args?: string[]; // Additional arguments
-  apiKey?: string; // Optional API key
+  command?: string;
+  args?: string[];
+  apiKey?: string;
   enabled: boolean;
 }
 
 export interface AgentAllocation {
-  claudeCode: number;  // Number of terminals assigned to claude-code
-  opencode: number;    // Number of terminals assigned to opencode
-  droid: number;       // Number of terminals assigned to droid
-  geminiCli: number;   // Number of terminals assigned to gemini-cli
-  cursor: number;      // Number of terminals assigned to cursor
-  codex: number;       // Number of terminals assigned to codex
-  ohMyPi: number;      // Number of terminals assigned to oh-my-pi
-  aider: number;       // Number of terminals assigned to aider
-  goose: number;       // Number of terminals assigned to goose
-  warp: number;        // Number of terminals assigned to warp
-  amp: number;         // Number of terminals assigned to amp
-  kiro: number;        // Number of terminals assigned to kiro
+  claudeCode: number;
+  opencode: number;
+  droid: number;
+  geminiCli: number;
+  cursor: number;
+  codex: number;
+  ohMyPi: number;
+  aider: number;
+  goose: number;
+  warp: number;
+  amp: number;
+  kiro: number;
 }
 
-// Template types for workspace layouts
 export type LayoutType = 'single' | 'dual' | 'quad' | 'six' | 'eight' | 'ten' | 'twelve' | 'fourteen' | 'sixteen' | 'grid' | 'custom';
 
 export interface Template {
@@ -47,7 +46,7 @@ export interface Template {
   columns: number;
   rows: number;
   icon: string;
-  isBuiltIn: boolean;  // true for pre-built, false for custom
+  isBuiltIn: boolean;
   createdAt: number;
   agentAllocation?: AgentAllocation;
 }
@@ -58,8 +57,8 @@ export interface TerminalPane {
   cwd: string;
   shell: string;
   status: 'running' | 'stopped' | 'error';
-  agent?: AgentConfig; // Agent configuration for this terminal
-  processId?: number; // PID của terminal process
+  agent?: AgentConfig;
+  processId?: number;
 }
 
 export interface WorkspaceLayout {
@@ -68,7 +67,7 @@ export interface WorkspaceLayout {
   columns: number;
   rows: number;
   terminals: TerminalPane[];
-  icon?: string; // Emoji or icon for workspace
+  icon?: string;
   createdAt: number;
   lastUsed: number;
 }
@@ -79,8 +78,8 @@ export interface WorkspaceCreationConfig {
   rows: number;
   cwd: string;
   icon?: string;
-  agentAssignments: Record<string, AgentConfig>; // terminalId -> AgentConfig
-  templateId?: string; // Optional template ID
+  agentAssignments: Record<string, AgentConfig>;
+  templateId?: string;
 }
 
 export interface WorkspaceState {
@@ -92,11 +91,10 @@ export interface WorkspaceState {
   editingWorkspace: WorkspaceLayout | null;
   restartingTerminals: Set<string>;
 
-  // Actions
   isTerminalRestarting: (terminalId: string) => boolean;
-  setCurrentWorkspace: (workspace: WorkspaceLayout) => void;
+  setCurrentWorkspace: (workspace: WorkspaceLayout | null) => void;
   addWorkspace: (config: WorkspaceCreationConfig) => WorkspaceLayout;
-  removeWorkspace: (id: string) => void;
+  removeWorkspace: (id: string) => Promise<void>;
   updateWorkspace: (id: string, updates: Partial<WorkspaceLayout>) => void;
   setActiveTerminal: (id: string | null) => void;
   setTheme: (theme: 'dark' | 'light') => void;
@@ -105,16 +103,14 @@ export interface WorkspaceState {
   updateTerminalAgent: (terminalId: string, agentConfig: AgentConfig) => void;
   updateTerminalStatus: (terminalId: string, status: TerminalPane['status']) => void;
   setTerminalProcessId: (terminalId: string, pid: number) => void;
-  removeTerminal: (terminalId: string) => void;
+  removeTerminal: (terminalId: string) => Promise<void>;
   splitTerminal: (terminalId: string, direction: 'horizontal' | 'vertical') => void;
-  restartTerminal: (terminalId: string) => void;
+  restartTerminal: (terminalId: string) => Promise<void>;
   switchTerminalAgent: (terminalId: string, newAgentType: string) => Promise<void>;
 
-  // Persistence
   loadWorkspaces: () => void;
   saveWorkspaces: () => void;
 
-  // Keyboard navigation helpers
   getNextWorkspace: () => WorkspaceLayout | null;
   getPreviousWorkspace: () => WorkspaceLayout | null;
   getNextTerminal: () => TerminalPane | null;

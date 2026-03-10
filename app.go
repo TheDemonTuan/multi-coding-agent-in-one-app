@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"log"
 
 	"tdt-space/internal/services"
 
@@ -140,6 +141,12 @@ func (a *App) SpawnTerminalWithAgent(id string, cwd string, agentType string, wo
 		AgentType: agentType,
 	})
 	fmt.Printf("[DEBUG] SpawnTerminalWithAgent result: success=%v, pid=%d, error=%s\n", result.Success, result.PID, result.Error)
+	
+	// Also log to standard log for visibility
+	if !result.Success {
+		log.Printf("[SpawnTerminalWithAgent] Failed for %s (agent=%s): %s", id, agentType, result.Error)
+	}
+	
 	return map[string]interface{}{
 		"success": result.Success,
 		"pid":     result.PID,
@@ -172,6 +179,11 @@ func (a *App) ResizeTerminal(id string, cols int, rows int) map[string]interface
 		"success": result.Success,
 		"error":   result.Error,
 	}
+}
+
+// GetTerminalStatus returns the status of a terminal.
+func (a *App) GetTerminalStatus(id string) map[string]interface{} {
+	return a.terminalSvc.GetTerminalStatus(id)
 }
 
 // ============================================================================

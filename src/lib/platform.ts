@@ -2,22 +2,24 @@
  * Platform detection utilities
  */
 
+import { backendAPI, isWailsAvailable } from '../services/wails-bridge';
+
 export type Platform = 'win32' | 'darwin' | 'linux';
 
 let cachedPlatform: Platform | null = null;
 
 /**
  * Get current platform
- * Falls back to checking from electron API if not available
+ * Falls back to checking from backend API if not available
  */
 export function getPlatform(): Platform {
   if (cachedPlatform) {
     return cachedPlatform;
   }
 
-  // Check if we're in Electron renderer
-  if (typeof window !== 'undefined' && (window as any).electronAPI) {
-    (window as any).electronAPI.getPlatform().then((platform: string) => {
+  // Check if we're in Wails runtime
+  if (isWailsAvailable()) {
+    backendAPI.getPlatform().then((platform: string) => {
       cachedPlatform = platform as Platform;
     }).catch(console.warn);
   }

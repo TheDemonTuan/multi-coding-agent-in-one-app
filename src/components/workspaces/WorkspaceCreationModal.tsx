@@ -5,6 +5,7 @@ import { AgentConfig, AgentType, AgentAllocation, Template, WorkspaceLayout } fr
 import { agentTypeInfo, agentAllocationKeys } from '../../types/workspace.agents';
 import { TemplateCard } from './TemplateCard';
 import { AgentItem } from './AgentItem';
+import { backendAPI } from '../../services/wails-bridge';
 import './WorkspaceCreationModal.css';
 
 const generateId = () => Math.random().toString(36).substring(2, 9);
@@ -193,15 +194,15 @@ export const WorkspaceCreationModal: React.FC<WorkspaceCreationModalProps> = ({
   };
 
   const handleBrowseFolder = async () => {
-    if (window.electronAPI) {
-      const result = await window.electronAPI.showOpenDialog({
+    try {
+      const result = await backendAPI.showOpenDialog({
         properties: ['openDirectory', 'createDirectory'],
         title: 'Select Working Directory',
       });
       if (!result.canceled && result.filePaths.length > 0) {
         setWorkingDir(result.filePaths[0]);
       }
-    } else {
+    } catch {
       const folder = prompt('Enter working directory path:', workingDir);
       if (folder) setWorkingDir(folder);
     }
@@ -496,46 +497,44 @@ export const WorkspaceCreationModal: React.FC<WorkspaceCreationModalProps> = ({
       // Auto-spawn all terminals after a short delay
       if (spawnTimeoutRef.current) clearTimeout(spawnTimeoutRef.current);
       spawnTimeoutRef.current = setTimeout(async () => {
-        if (window.electronAPI) {
-          try {
-            const spawnResults = [];
-            for (let i = 0; i < workspace.terminals.length; i++) {
-              const terminal = workspace.terminals[i];
-              const agentKey = `term-${i}`;
-              const agentConfig = finalAgentAssignments[agentKey];
-              
-              let result;
-              if (agentConfig && agentConfig.enabled && agentConfig.type !== 'none') {
-                result = await window.electronAPI.spawnTerminalWithAgent(
-                  terminal.id,
-                  workingDir,
-                  agentConfig,
-                  workspace.id
-                );
-              } else {
-                result = await window.electronAPI.spawnTerminal(
-                  terminal.id,
-                  workingDir,
-                  workspace.id
-                );
-              }
-              
-              if (!result.success) {
-                spawnResults.push({ terminal: terminal.id, success: false, error: result.error });
-              }
+        try {
+          const spawnResults = [];
+          for (let i = 0; i < workspace.terminals.length; i++) {
+            const terminal = workspace.terminals[i];
+            const agentKey = `term-${i}`;
+            const agentConfig = finalAgentAssignments[agentKey];
+
+            let result;
+            if (agentConfig && agentConfig.enabled && agentConfig.type !== 'none') {
+              result = await backendAPI.spawnTerminalWithAgent(
+                terminal.id,
+                workingDir,
+                agentConfig,
+                workspace.id
+              );
+            } else {
+              result = await backendAPI.spawnTerminal(
+                terminal.id,
+                workingDir,
+                workspace.id
+              );
             }
-            
-            // Show error if any terminals failed
-            const failedTerminals = spawnResults.filter(r => !r.success);
-            if (failedTerminals.length > 0) {
-              console.error('[WorkspaceCreationModal] Failed to spawn terminals:', failedTerminals);
-              const errorMsg = failedTerminals[0].error || 'Không thể khởi tạo terminal';
-              alert(`⚠️ Lỗi khi tạo workspace:\n\n${errorMsg}\n\nVui lòng kiểm tra thư mục làm việc và thử lại.`);
+
+            if (!result.success) {
+              spawnResults.push({ terminal: terminal.id, success: false, error: result.error });
             }
-          } catch (err: any) {
-            console.error('[WorkspaceCreationModal] Failed to spawn terminals:', err);
-            alert(`⚠️ Lỗi khi tạo workspace:\n\n${err.message || 'Lỗi không xác định'}\n\nVui lòng thử lại.`);
           }
+
+          // Show error if any terminals failed
+          const failedTerminals = spawnResults.filter(r => !r.success);
+          if (failedTerminals.length > 0) {
+            console.error('[WorkspaceCreationModal] Failed to spawn terminals:', failedTerminals);
+            const errorMsg = failedTerminals[0].error || 'Không thể khởi tạo terminal';
+            alert(`⚠️ Lỗi khi tạo workspace:\n\n${errorMsg}\n\nVui lòng kiểm tra thư mục làm việc và thử lại.`);
+          }
+        } catch (err: any) {
+          console.error('[WorkspaceCreationModal] Failed to spawn terminals:', err);
+          alert(`⚠️ Lỗi khi tạo workspace:\n\n${err.message || 'Lỗi không xác định'}\n\nVui lòng thử lại.`);
         }
       }, 100);
     }

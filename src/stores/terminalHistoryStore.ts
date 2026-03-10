@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { CommandBlockData } from '../components/agents/CommandBlock';
+import { backendAPI } from '../services/wails-bridge';
 
 const COMMAND_HISTORY_STORAGE_KEY = 'terminal-command-history';
 
@@ -7,7 +8,6 @@ interface TerminalHistoryState {
   commandBlocks: Record<string, CommandBlockData[]>;
   isLoading: boolean;
 
-  // Actions
   loadHistory: () => Promise<void>;
   saveHistory: (terminalId: string, blocks: CommandBlockData[]) => Promise<void>;
   addCommandBlock: (terminalId: string, block: CommandBlockData) => void;
@@ -23,15 +23,9 @@ export const useTerminalHistoryStore = create<TerminalHistoryState>((set, get) =
   isLoading: false,
 
   loadHistory: async () => {
-    if (typeof window === 'undefined' || !(window as any).electronAPI) {
-      return;
-    }
-
     set({ isLoading: true });
-
     try {
-      const stored = await (window as any).electronAPI.getStoreValue(COMMAND_HISTORY_STORAGE_KEY);
-
+      const stored = await backendAPI.getStoreValue(COMMAND_HISTORY_STORAGE_KEY);
       if (stored) {
         set({ commandBlocks: stored });
       }
@@ -43,15 +37,10 @@ export const useTerminalHistoryStore = create<TerminalHistoryState>((set, get) =
   },
 
   saveHistory: async (terminalId, blocks) => {
-    if (typeof window === 'undefined' || !(window as any).electronAPI) {
-      return;
-    }
-
     const { commandBlocks } = get();
     const updatedHistory = { ...commandBlocks, [terminalId]: blocks };
-
     try {
-      await (window as any).electronAPI.setStoreValue(COMMAND_HISTORY_STORAGE_KEY, updatedHistory);
+      await backendAPI.setStoreValue(COMMAND_HISTORY_STORAGE_KEY, updatedHistory);
       set({ commandBlocks: updatedHistory });
     } catch (err) {
       console.error('[TerminalHistoryStore] Failed to save history:', err);
@@ -97,17 +86,12 @@ export const useTerminalHistoryStore = create<TerminalHistoryState>((set, get) =
   },
 
   clearHistory: async (terminalId) => {
-    if (typeof window === 'undefined' || !(window as any).electronAPI) {
-      return;
-    }
-
     set((state) => {
       const { [terminalId]: _, ...rest } = state.commandBlocks;
       return { commandBlocks: rest };
     });
-
     try {
-      await (window as any).electronAPI.setStoreValue(COMMAND_HISTORY_STORAGE_KEY, get().commandBlocks);
+      await backendAPI.setStoreValue(COMMAND_HISTORY_STORAGE_KEY, get().commandBlocks);
     } catch (err) {
       console.error('[TerminalHistoryStore] Failed to clear history:', err);
     }

@@ -16,14 +16,23 @@ func StartPTY(opts PTYOptions) (*PTYHandle, error) {
 	args := append([]string{opts.Command}, opts.Args...)
 	cmdLine := buildCommandLine(args)
 
+	// Prepare environment with UTF-8 encoding support for Windows ConPTY
+	// This helps prevent text scrambling and encoding issues
+	env := opts.Env
+	if env == nil {
+		env = []string{}
+	}
+	// Add Windows-specific UTF-8 environment variables
+	env = appendUTF8Env(env)
+
 	cptyOpts := []conpty.ConPtyOption{
 		conpty.ConPtyDimensions(int(opts.Cols), int(opts.Rows)),
 	}
 	if opts.Dir != "" {
 		cptyOpts = append(cptyOpts, conpty.ConPtyWorkDir(opts.Dir))
 	}
-	if len(opts.Env) > 0 {
-		cptyOpts = append(cptyOpts, conpty.ConPtyEnv(opts.Env))
+	if len(env) > 0 {
+		cptyOpts = append(cptyOpts, conpty.ConPtyEnv(env))
 	}
 
 	cpty, err := conpty.Start(cmdLine, cptyOpts...)
@@ -40,6 +49,38 @@ func StartPTY(opts PTYOptions) (*PTYHandle, error) {
 		},
 	}
 	return handle, nil
+}
+
+// appendUTF8Env adds Windows-specific UTF-8 environment variables.
+// These settings help ConPTY handle Unicode correctly and prevent text scrambling.
+func appendUTF8Env(env []string) []string {
+	// Check if already has these vars
+	hasChcp := false
+	hasCodepage := false
+	for _, e := range env {
+		if strings.HasPrefix(e, "CHCP=") {
+			hasChcp = true
+		}
+		if strings.HasPrefix(e, "CODEPAGE=") {
+			hasCodepage = true
+		}
+	}
+
+	// Add UTF-8 codepage settings
+	if !hasChcp {
+		env = append(env, "CHCP=65001")
+	}
+	if !hasCodepage {
+		env = append(env, "CODEPAGE=65001")
+	}
+
+	// Add other Windows UTF-8 settings
+	env = append(env,
+		"PYTHONIOENCODING=utf-8",
+		"PYTHONUTF8=1",
+	)
+
+	return env
 }
 
 // buildCommandLine joins args into a Windows-safe command-line string,

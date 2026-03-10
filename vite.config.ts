@@ -1,59 +1,12 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
-import electron from 'vite-plugin-electron';
-import renderer from 'vite-plugin-electron-renderer';
 import path from 'path';
-import fs from 'fs';
 
-// Plugin to copy preload.cjs directly (bypass Vite transformation)
-function copyPreloadPlugin() {
-  return {
-    name: 'copy-preload',
-    apply: 'serve' as const,
-    buildStart() {
-      const srcPath = path.join(__dirname, 'src/electron/preload.cjs');
-      const destPath = path.join(__dirname, 'dist-electron/preload/preload.cjs');
-      fs.mkdirSync(path.dirname(destPath), { recursive: true });
-      fs.copyFileSync(srcPath, destPath);
-      console.log('[copy-preload] ✓ Copied preload.cjs');
-    },
-  };
-}
-
+// Wails-compatible Vite config
+// - Output goes to frontend/dist (Wails reads this)
+// - No electron plugins
 export default defineConfig({
-  plugins: [
-    react(),
-    copyPreloadPlugin(),
-    electron([
-      {
-        entry: 'src/electron/main.ts',
-        vite: {
-          build: {
-            outDir: 'dist-electron/main',
-            rollupOptions: {
-              external: ['electron', 'node-pty'],
-              output: {
-                format: 'cjs',
-                entryFileNames: 'main.js',
-              },
-            },
-          },
-        },
-      },
-      {
-        entry: 'src/electron/preload.cjs',
-        vite: {
-          build: {
-            outDir: 'dist-electron/preload',
-            rollupOptions: {
-              external: ['electron'],
-            },
-          },
-        },
-      },
-    ]),
-    renderer(),
-  ],
+  plugins: [react()],
   base: './',
   resolve: {
     alias: {
@@ -61,12 +14,12 @@ export default defineConfig({
     },
   },
   server: {
-    port: 5173,
-    strictPort: false, // Tự động tìm port khác nếu 5173 bị chiếm
+    port: 34115, // Wails default dev server port
+    strictPort: true,
     open: false,
   },
   build: {
-    outDir: 'dist',
+    outDir: 'frontend/dist',
     emptyOutDir: true,
   },
 });

@@ -1,5 +1,6 @@
-import { useState, useCallback, useEffect, MutableRefObject } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { CommandBlockData } from '../components/agents/CommandBlock';
+import { backendAPI, isWailsAvailable } from '../services/wails-bridge';
 
 const COMMAND_HISTORY_STORAGE_KEY = 'terminal-command-history';
 
@@ -32,14 +33,14 @@ export const useCommandHistory = (): UseCommandHistoryReturn => {
 
   // Load history from storage
   const loadHistory = useCallback(() => {
-    if (typeof window === 'undefined' || !(window as any).electronAPI) {
+    if (!isWailsAvailable()) {
       return;
     }
 
-    (window as any).electronAPI.getStoreValue(COMMAND_HISTORY_STORAGE_KEY)
+    backendAPI.getStoreValue(COMMAND_HISTORY_STORAGE_KEY)
       .then((stored: Record<string, CommandBlockData[]> | null) => {
         if (stored) {
-          setCommandBlocks(stored);
+          setCommandBlocks(stored as Record<string, CommandBlockData[]>);
         }
       })
       .catch(console.error);
@@ -47,11 +48,11 @@ export const useCommandHistory = (): UseCommandHistoryReturn => {
 
   // Save history to storage
   const saveHistory = useCallback(() => {
-    if (typeof window === 'undefined' || !(window as any).electronAPI) {
+    if (!isWailsAvailable()) {
       return;
     }
 
-    (window as any).electronAPI.setStoreValue(COMMAND_HISTORY_STORAGE_KEY, commandBlocks)
+    backendAPI.setStoreValue(COMMAND_HISTORY_STORAGE_KEY, commandBlocks)
       .catch(console.error);
   }, [commandBlocks]);
 

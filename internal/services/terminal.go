@@ -64,6 +64,7 @@ func (t *TerminalService) emitEvent(eventName string, payload map[string]interfa
 
 	ctx := t.getCtx()
 	if ctx != nil {
+		log.Printf("[DEBUG] Emitting event %s: %v", eventName, payload)
 		wailsruntime.EventsEmit(ctx, eventName, payload)
 	} else {
 		// Queue the event for later emission when context becomes available
@@ -87,12 +88,13 @@ func (t *TerminalService) flushPendingEvents() {
 		return
 	}
 
+	pendingCount := len(t.pendingEvents) // Save count BEFORE clearing
 	for _, event := range t.pendingEvents {
 		wailsruntime.EventsEmit(ctx, event.eventName, event.payload)
 		log.Printf("[INFO] Flushed pending event: %s", event.eventName)
 	}
 	t.pendingEvents = make([]pendingEvent, 0)
-	log.Printf("[INFO] Flushed %d pending events", len(t.pendingEvents))
+	log.Printf("[INFO] Flushed %d pending events", pendingCount) // Use saved count
 }
 
 // SetContext sets the Wails context and flushes any pending events.
@@ -142,7 +144,13 @@ func (t *TerminalService) SpawnTerminal(opts SpawnTerminalOptions) SpawnResult {
 		Rows:    uint16(rows),
 	})
 	if err != nil {
-		return SpawnResult{Success: false, Error: err.Error()}
+		errMsg := err.Error()
+		// Emit error event BEFORE returning so frontend can display error
+		t.emitEvent("terminal-error", map[string]interface{}{
+			"terminalId": opts.ID,
+			"error":      errMsg,
+		})
+		return SpawnResult{Success: false, Error: errMsg}
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -165,7 +173,6 @@ func (t *TerminalService) SpawnTerminal(opts SpawnTerminalOptions) SpawnResult {
 	})
 
 	go t.readPTYOutput(ctx, proc)
-	go t.watchProcessExitByPTY(proc)
 
 	return SpawnResult{Success: true, PID: handle.Pid}
 }
@@ -211,6 +218,12 @@ func (t *TerminalService) SpawnTerminalWithAgent(opts SpawnAgentOptions) SpawnRe
 		if installCmd != "" {
 			errMsg += fmt.Sprintf(". Please install with: %s", installCmd)
 		}
+		// Emit error event BEFORE returning so frontend can display error
+		log.Printf("[DEBUG] Emitting terminal-error for %s: %s", opts.ID, errMsg)
+		t.emitEvent("terminal-error", map[string]interface{}{
+			"terminalId": opts.ID,
+			"error":      errMsg,
+		})
 		return SpawnResult{Success: false, Error: errMsg}
 	}
 
@@ -233,6 +246,12 @@ func (t *TerminalService) SpawnTerminalWithAgent(opts SpawnAgentOptions) SpawnRe
 				errMsg += fmt.Sprintf(". Please install with: %s", installCmd)
 			}
 		}
+		// Emit error event BEFORE returning so frontend can display error
+		log.Printf("[DEBUG] Emitting terminal-error for %s (PTY error): %s", opts.ID, errMsg)
+		t.emitEvent("terminal-error", map[string]interface{}{
+			"terminalId": opts.ID,
+			"error":      errMsg,
+		})
 		return SpawnResult{Success: false, Error: errMsg}
 	}
 
@@ -256,7 +275,6 @@ func (t *TerminalService) SpawnTerminalWithAgent(opts SpawnAgentOptions) SpawnRe
 	})
 
 	go t.readPTYOutput(ctx, proc)
-	go t.watchProcessExitByPTY(proc)
 
 	return SpawnResult{Success: true, PID: handle.Pid}
 }
@@ -325,6 +343,26 @@ func (t *TerminalService) CleanupAllTerminals() CleanupResult {
 	return CleanupResult{Success: true, Cleaned: ids}
 }
 
+// GetTerminalStatus returns the current status of a terminal process.
+func (t *TerminalService) GetTerminalStatus(id string) map[string]interface{} {
+	t.mu.RLock()
+	proc, exists := t.processes[id]
+	t.mu.RUnlock()
+
+	if !exists {
+		return map[string]interface{}{
+			"exists": false,
+			"status": "stopped",
+		}
+	}
+
+	return map[string]interface{}{
+		"exists": true,
+		"status": "running",
+		"pid":    proc.pty.Pid,
+	}
+}
+
 // CleanupWorkspaceTerminals kills terminals belonging to a specific workspace.
 func (t *TerminalService) CleanupWorkspaceTerminals(workspaceID string) CleanupResult {
 	t.mu.Lock()
@@ -386,7 +424,9 @@ func (t *TerminalService) killProcess(id string) error {
 }
 
 func (t *TerminalService) readPTYOutput(ctx context.Context, proc *ptyProcess) {
-	buf := make([]byte, 4096)
+	// Increased buffer size for better handling of large output bursts
+	// This helps prevent text scrambling when ConPTY sends large chunks
+	buf := make([]byte, 16384)
 	for {
 		select {
 		case <-ctx.Done():
@@ -398,52 +438,24 @@ func (t *TerminalService) readPTYOutput(ctx context.Context, proc *ptyProcess) {
 		if n > 0 {
 			data := make([]byte, n)
 			copy(data, buf[:n])
+			log.Printf("[DEBUG] readPTYOutput for %s: read %d bytes", proc.id, n)
 			proc.batcher.write(data)
 		}
 		if err != nil {
+			log.Printf("[DEBUG] readPTYOutput for %s: err=%v", proc.id, err)
+			// PTY closed, process has exited - emit terminal-exit
+			t.mu.Lock()
+			delete(t.processes, proc.id)
+			t.mu.Unlock()
+
+			// Emit terminal-exit event (queued if context not yet available)
+			t.emitEvent("terminal-exit", map[string]interface{}{
+				"terminalId": proc.id,
+				"exitCode":   0,
+			})
 			return
 		}
 	}
-}
-
-// watchProcessExitByPTY waits for the PTY process to exit (pid-based, works for both Unix and Windows).
-func (t *TerminalService) watchProcessExitByPTY(proc *ptyProcess) {
-	exitCode := 0
-
-	// Unix path: wait on exec.Cmd
-	if proc.cmd != nil {
-		if err := proc.cmd.Wait(); err != nil {
-			if exitErr, ok := err.(*exec.ExitError); ok {
-				exitCode = exitErr.ExitCode()
-			}
-		}
-	} else {
-		// Windows ConPTY path: poll until PID is gone
-		pid := proc.pty.Pid
-		if pid > 0 {
-			for {
-				p, err := os.FindProcess(pid)
-				if err != nil {
-					break
-				}
-				// On Windows, Signal(0) returns nil if process is still alive
-				if err := p.Signal(os.Signal(nil)); err != nil {
-					break
-				}
-				time.Sleep(500 * time.Millisecond)
-			}
-		}
-	}
-
-	t.mu.Lock()
-	delete(t.processes, proc.id)
-	t.mu.Unlock()
-
-	// Emit terminal-exit event (queued if context not yet available)
-	t.emitEvent("terminal-exit", map[string]interface{}{
-		"terminalId": proc.id,
-		"exitCode":   exitCode,
-	})
 }
 
 // ============================================================================
@@ -473,10 +485,22 @@ func resolveCWD(cwd string) string {
 
 func buildEnv(terminalID string) []string {
 	env := os.Environ()
+
+	// Platform-specific TERM configuration
+	termVar := "TERM=xterm-256color"
+	if platform.IsWindows() {
+		// Use cygwin for better Windows ConPTY compatibility
+		// This helps prevent text scrambling and encoding issues
+		termVar = "TERM=cygwin"
+	}
+
 	env = append(env,
-		"TERM=xterm-256color",
+		termVar,
 		"COLORTERM=truecolor",
 		"TDT_TERMINAL_ID="+terminalID,
+		"LC_ALL=C.UTF-8",
+		"LANG=en_US.UTF-8",
+		"ConEmuANSI=ON", // Improves ConPTY compatibility
 	)
 	return filterEnv(env, "TERM_PROGRAM")
 }

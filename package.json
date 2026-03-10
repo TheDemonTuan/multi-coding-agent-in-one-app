@@ -4,21 +4,20 @@
   "version": "0.1.2",
   "description": "Multi-Agent Terminal for TDT Vibe Coding",
   "author": "TDT Space Team",
-  "main": "dist-electron/main/main.js",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "vite --port 34115",
     "build": "tsc && vite build",
-    "build:electron": "tsc && vite build",
     "preview": "vite preview",
-    "electron:start": "cross-env ELECTRON_IS_DEV=0 electron .",
-    "electron:build": "bun run build && bun run package",
-    "electron:build:mac": "bun run build && bun run package:mac",
-    "electron:only": "electron .",
-    "package": "node scripts/package.js",
-    "package:mac": "electron-builder --mac",
-    "package:linux": "electron-builder --linux",
-    "postinstall": "electron-builder install-app-deps"
+    "wails:dev": "wails dev",
+    "wails:build": "wails build",
+    "wails:build:prod": "cmd /c build.bat prod",
+    "wails:build:installer": "cmd /c build.bat installer",
+    "wails:build:windows": "cmd /c build.bat windows",
+    "wails:build:linux": "cmd /c build.bat linux",
+    "wails:build:macos": "cmd /c build.bat macos",
+    "wails:build:macos-arm": "cmd /c build.bat macos-arm",
+    "wails:build:all": "cmd /c build.bat all"
   },
   "dependencies": {
     "@xterm/addon-fit": "^0.11.0",
@@ -26,8 +25,6 @@
     "@xterm/addon-web-links": "^0.12.0",
     "@xterm/addon-webgl": "^0.19.0",
     "@xterm/xterm": "^6.0.0",
-    "electron-store": "^11.0.2",
-    "node-pty": "^1.1.0",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "react-resizable-panels": "^4.7.1",
@@ -38,70 +35,10 @@
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^5.1.4",
-    "concurrently": "^9.2.1",
-    "cross-env": "^10.1.0",
-    "electron": "^40.8.0",
-    "electron-builder": "^26.8.1",
+    "lightningcss": "^1.32.0",
+    "rollup-plugin-visualizer": "^7.0.1",
+    "terser": "^5.46.0",
     "typescript": "~5.9.3",
-    "vite": "^7.3.1",
-    "vite-plugin-electron": "^0.29.0",
-    "vite-plugin-electron-renderer": "^0.14.6",
-    "wait-on": "^9.0.4"
-  },
-  "build": {
-    "appId": "com.tdt-space.app",
-    "productName": "TDT Space",
-    "directories": {
-      "output": "release"
-    },
-    "files": [
-      "dist/**/*",
-      "dist-electron/**/*",
-      "public/**/*",
-      "package.json"
-    ],
-    "asar": true,
-    "asarUnpack": [
-      "node_modules/node-pty/**/*",
-      "node_modules/@xterm/**/*"
-    ],
-    "win": {
-      "target": [
-        "dir"
-      ],
-      "icon": "public/icon.ico"
-    },
-    "mac": {
-      "target": [
-        {
-          "target": "dmg",
-          "arch": [
-            "x64",
-            "arm64"
-          ]
-        },
-        {
-          "target": "zip",
-          "arch": [
-            "x64",
-            "arm64"
-          ]
-        }
-      ],
-      "category": "public.app-category.developer-tools",
-      "icon": "public/icon.icns",
-      "hardenedRuntime": true,
-      "gatekeeperAssess": false
-    },
-    "linux": {
-      "target": [
-        "AppImage",
-        "deb"
-      ],
-      "category": "Development",
-      "icon": "public/icon.png"
-    },
-    "npmRebuild": false,
-    "nodeGypRebuild": false
+    "vite": "^7.3.1"
   }
 }

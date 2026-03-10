@@ -1,15 +1,16 @@
 import { AgentType, AgentAllocation } from './workspace';
 
+export type { AgentType, AgentAllocation };
+
 export interface AgentIconConfig {
   type: AgentType;
   label: string;
   description: string;
-  icon: string; // URL to icon image
-  emoji?: string; // Optional emoji fallback
+  icon: string;
+  emoji?: string;
   color: string;
 }
 
-// Base URL for assets - will be replaced during build
 const BASE_URL = import.meta.env.BASE_URL || './';
 
 export const agentTypeInfo: AgentIconConfig[] = [

@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { backendAPI } from '../services/wails-bridge';
 
 export interface TerminalSettings {
   fontSize: number;
@@ -21,7 +22,7 @@ const DEFAULT_SETTINGS: TerminalSettings = {
   fontSize: 14,
   fontFamily: '"Cascadia Code", "Fira Code", Consolas, monospace',
   cursorBlink: true,
-  scrollback: 1000, // Optimal limit to prevent memory bloat (VAL-PERF-002)
+  scrollback: 1000,
   showCommandBlocks: true,
   theme: 'dark',
 };
@@ -39,13 +40,11 @@ interface SettingsState {
   vietnameseIme: VietnameseImeSettings;
   isLoading: boolean;
 
-  // Actions
   loadSettings: () => Promise<void>;
   saveSettings: () => Promise<void>;
   updateSettings: (updates: Partial<TerminalSettings>) => void;
   resetSettings: () => void;
-  
-  // Vietnamese IME actions
+
   loadVietnameseImeSettings: () => Promise<void>;
   saveVietnameseImeSettings: () => Promise<void>;
   updateVietnameseImeSettings: (updates: Partial<VietnameseImeSettings>) => void;
@@ -57,15 +56,9 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   isLoading: false,
 
   loadSettings: async () => {
-    if (typeof window === 'undefined' || !(window as any).electronAPI) {
-      return;
-    }
-
     set({ isLoading: true });
-
     try {
-      const stored = await (window as any).electronAPI.getStoreValue(SETTINGS_STORAGE_KEY);
-
+      const stored = await backendAPI.getStoreValue(SETTINGS_STORAGE_KEY);
       if (stored) {
         set({ settings: { ...DEFAULT_SETTINGS, ...stored } });
       }
@@ -77,14 +70,9 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   },
 
   saveSettings: async () => {
-    if (typeof window === 'undefined' || !(window as any).electronAPI) {
-      return;
-    }
-
     const { settings } = get();
-
     try {
-      await (window as any).electronAPI.setStoreValue(SETTINGS_STORAGE_KEY, settings);
+      await backendAPI.setStoreValue(SETTINGS_STORAGE_KEY, settings);
     } catch (err) {
       console.error('[SettingsStore] Failed to save settings:', err);
     }
@@ -100,15 +88,9 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     set({ settings: DEFAULT_SETTINGS });
   },
 
-  // Vietnamese IME settings actions
   loadVietnameseImeSettings: async () => {
-    if (typeof window === 'undefined' || !(window as any).electronAPI) {
-      return;
-    }
-
     try {
-      const stored = await (window as any).electronAPI.getStoreValue(VN_IME_SETTINGS_KEY);
-
+      const stored = await backendAPI.getStoreValue(VN_IME_SETTINGS_KEY);
       if (stored) {
         set({ vietnameseIme: { ...DEFAULT_VN_IME_SETTINGS, ...stored } });
       }
@@ -118,14 +100,9 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   },
 
   saveVietnameseImeSettings: async () => {
-    if (typeof window === 'undefined' || !(window as any).electronAPI) {
-      return;
-    }
-
     const { vietnameseIme } = get();
-
     try {
-      await (window as any).electronAPI.setStoreValue(VN_IME_SETTINGS_KEY, vietnameseIme);
+      await backendAPI.setStoreValue(VN_IME_SETTINGS_KEY, vietnameseIme);
     } catch (err) {
       console.error('[SettingsStore] Failed to save VN IME settings:', err);
     }
