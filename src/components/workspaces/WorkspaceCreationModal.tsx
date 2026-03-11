@@ -6,6 +6,7 @@ import { agentTypeInfo, agentAllocationKeys } from '../../types/workspace.agents
 import { TemplateCard } from './TemplateCard';
 import { AgentItem } from './AgentItem';
 import { backendAPI } from '../../services/wails-bridge';
+import type { DirectoryEntry } from '../../types/backend';
 import './WorkspaceCreationModal.css';
 
 const generateId = () => Math.random().toString(36).substring(2, 9);
@@ -341,57 +342,83 @@ export const WorkspaceCreationModal: React.FC<WorkspaceCreationModalProps> = ({
     }
   };
 
-  const handleCommandChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const value = e.target.value;
-    setCommandInput(value);
-    
-    // Show suggestions for cd command
-    if (value.startsWith('cd ') && value.length > 3) {
-      const partialPath = value.slice(3).trim();
-      const mockedPaths = getMockedPaths(partialPath);
-      
-      if (mockedPaths.length > 0) {
-        setSuggestions(mockedPaths);
-        setShowSuggestions(true);
-        setSelectedSuggestionIndex(0);
+  // Handle command input changes and show suggestions
+  useEffect(() => {
+    const fetchSuggestions = async () => {
+      if (commandInput.startsWith('cd ') && commandInput.length > 3) {
+        const partialPath = commandInput.slice(3).trim();
+        const paths = await getDirectoryPaths(partialPath);
+
+        if (paths.length > 0) {
+          setSuggestions(paths);
+          setShowSuggestions(true);
+          setSelectedSuggestionIndex(0);
+        } else {
+          setShowSuggestions(false);
+          setSuggestions([]);
+        }
       } else {
         setShowSuggestions(false);
         setSuggestions([]);
       }
-    } else {
-      setShowSuggestions(false);
-      setSuggestions([]);
-    }
+    };
+
+    fetchSuggestions();
+  }, [commandInput]);
+
+  const handleCommandChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setCommandInput(e.target.value);
   };
 
-  // Mock file system paths for auto-completion
-  const getMockedPaths = (partial: string): string[] => {
-    const commonPaths = [
-      'C:/Projects/tdt-clone',
-      'C:/Projects/my-app',
-      'C:/Projects/frontend',
-      'C:/Projects/backend',
-      'C:/Users/ASUS/Desktop',
-      'C:/Users/ASUS/Documents',
-      'C:/Users/ASUS/Downloads',
-      'D:/dev/workspace',
-      'D:/dev/projects',
-      '~/projects/app1',
-      '~/projects/app2',
-      '~/workspace/frontend',
-      './src',
-      './dist',
-      './node_modules',
-      './public',
-      '../sibling-project',
-      '../parent-folder',
-    ];
-    
-    if (!partial) return commonPaths.slice(0, 5);
-    
-    return commonPaths.filter(path => 
-      path.toLowerCase().includes(partial.toLowerCase())
-    ).slice(0, 8);
+  // Get actual directory paths for auto-completion
+  const getDirectoryPaths = async (partial: string): Promise<string[]> => {
+    try {
+      // Determine the directory to list based on the partial path
+      let targetPath = partial;
+
+      // Handle special paths
+      if (partial === '~' || partial.startsWith('~/')) {
+        targetPath = partial;
+      } else if (partial === '.' || partial.startsWith('./')) {
+        targetPath = '.';
+      } else if (partial === '..' || partial.startsWith('../')) {
+        targetPath = '..';
+      } else if (!partial.includes('/') && !partial.includes('\\')) {
+        // Just a name, search in current directory
+        targetPath = workingDir || '.';
+      } else {
+        // Extract directory from partial path
+        const lastSepIndex = Math.max(partial.lastIndexOf('/'), partial.lastIndexOf('\\'));
+        if (lastSepIndex > 0) {
+          targetPath = partial.substring(0, lastSepIndex);
+        }
+      }
+
+      // Get directory listing from backend
+      const result = await backendAPI.listDirectory(targetPath);
+
+      if (result.error) {
+        console.warn('[WorkspaceCreationModal] Failed to list directory:', result.error);
+        return [];
+      }
+
+      // Filter to show only directories
+      const directories = result.entries
+        .filter((entry: DirectoryEntry) => entry.isDirectory)
+        .map((entry: DirectoryEntry) => entry.name);
+
+      // If user is typing a partial path, filter results
+      const lastSlashIndex = Math.max(partial.lastIndexOf('/'), partial.lastIndexOf('\\'));
+      const prefix = lastSlashIndex >= 0 ? partial.substring(0, lastSlashIndex + 1) : '';
+
+      return directories
+        .filter((name: string) => name.toLowerCase().includes(partial.toLowerCase()) || prefix)
+        .map((name: string) => prefix + name)
+        .slice(0, 8);
+    } catch (err) {
+      console.warn('[WorkspaceCreationModal] Error listing directory:', err);
+      return [];
+    }
   };
 
   const handleDragStart = (e: React.DragEvent, agentType: AgentType) => {

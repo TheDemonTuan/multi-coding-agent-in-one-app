@@ -13,6 +13,10 @@ export type {
   PatchLog,
   OpenDialogOptions,
   OpenDialogReturnValue,
+  DialogOptions,
+  DialogResult,
+  DirectoryEntry,
+  DirectoryListing,
 } from './backend';
 
 // Additional types for Wails Go bindings

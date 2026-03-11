@@ -130,6 +130,23 @@ type DialogResult struct {
 }
 
 // ============================================================================
+// DIRECTORY LISTING TYPES
+// ============================================================================
+
+// DirectoryEntry represents a single file or directory entry.
+type DirectoryEntry struct {
+	Name        string `json:"name"`
+	Path        string `json:"path"`
+	IsDirectory bool   `json:"isDirectory"`
+}
+
+// DirectoryListing is the result of listing a directory.
+type DirectoryListing struct {
+	Entries []DirectoryEntry `json:"entries"`
+	Error   string           `json:"error,omitempty"`
+}
+
+// ============================================================================
 // VIETNAMESE IME TYPES
 // ============================================================================
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strings"
 
@@ -120,4 +121,45 @@ func (s *SystemService) GetShellInfo() map[string]string {
 		"path": shell,
 		"name": name,
 	}
+}
+
+// ListDirectory returns a list of entries in the specified directory.
+// Expands ~ to the user's home directory.
+func (s *SystemService) ListDirectory(path string) DirectoryListing {
+	// Expand ~ to home directory
+	if strings.HasPrefix(path, "~") {
+		home := platform.GetUserHome()
+		path = filepath.Join(home, strings.TrimPrefix(path, "~"))
+	}
+
+	// Handle relative paths
+	if !filepath.IsAbs(path) {
+		cwd, err := os.Getwd()
+		if err != nil {
+			return DirectoryListing{Error: err.Error()}
+		}
+		path = filepath.Join(cwd, path)
+	}
+
+	// Clean the path
+	path = filepath.Clean(path)
+
+	// Read directory contents
+	entries, err := os.ReadDir(path)
+	if err != nil {
+		return DirectoryListing{Error: err.Error()}
+	}
+
+	// Convert to DirectoryEntry slice
+	result := make([]DirectoryEntry, 0, len(entries))
+	for _, entry := range entries {
+		fullPath := filepath.Join(path, entry.Name())
+		result = append(result, DirectoryEntry{
+			Name:        entry.Name(),
+			Path:        fullPath,
+			IsDirectory: entry.IsDir(),
+		})
+	}
+
+	return DirectoryListing{Entries: result}
 }

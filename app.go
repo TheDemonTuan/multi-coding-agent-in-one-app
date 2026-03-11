@@ -14,19 +14,19 @@ import (
 
 // App struct holds the application context and services.
 type App struct {
-	ctx             context.Context
-	terminalSvc     *services.TerminalService
-	storeSvc        *services.StoreService
-	systemSvc       *services.SystemService
+	ctx              context.Context
+	terminalSvc      *services.TerminalService
+	storeSvc         *services.StoreService
+	systemSvc        *services.SystemService
 	vietnameseIMESvc *services.VietnameseIMEService
 }
 
 // NewApp creates a new App with required services.
 func NewApp(terminalSvc *services.TerminalService, storeSvc *services.StoreService, systemSvc *services.SystemService, vietnameseIMESvc *services.VietnameseIMEService) *App {
 	return &App{
-		terminalSvc:     terminalSvc,
-		storeSvc:        storeSvc,
-		systemSvc:       systemSvc,
+		terminalSvc:      terminalSvc,
+		storeSvc:         storeSvc,
+		systemSvc:        systemSvc,
 		vietnameseIMESvc: vietnameseIMESvc,
 	}
 }
@@ -125,7 +125,6 @@ func (a *App) SpawnTerminal(id string, cwd string, workspaceId string) map[strin
 	result := a.terminalSvc.SpawnTerminal(services.SpawnTerminalOptions{
 		ID:  id,
 		CWD: cwd,
-
 	})
 	return map[string]interface{}{
 		"success": result.Success,
@@ -143,12 +142,12 @@ func (a *App) SpawnTerminalWithAgent(id string, cwd string, agentType string, wo
 		AgentType: agentType,
 	})
 	fmt.Printf("[DEBUG] SpawnTerminalWithAgent result: success=%v, pid=%d, error=%s\n", result.Success, result.PID, result.Error)
-	
+
 	// Also log to standard log for visibility
 	if !result.Success {
 		log.Printf("[SpawnTerminalWithAgent] Failed for %s (agent=%s): %s", id, agentType, result.Error)
 	}
-	
+
 	return map[string]interface{}{
 		"success": result.Success,
 		"pid":     result.PID,
@@ -232,6 +231,16 @@ func (a *App) GetPlatform() string {
 // GetCwd returns the current working directory.
 func (a *App) GetCwd() string {
 	return a.systemSvc.GetCwd()
+}
+
+// ShowOpenDialog shows a native open dialog for selecting files or directories.
+func (a *App) ShowOpenDialog(opts services.DialogOptions) services.DialogResult {
+	return a.systemSvc.ShowOpenDialog(opts)
+}
+
+// ListDirectory returns a list of entries in the specified directory.
+func (a *App) ListDirectory(path string) services.DirectoryListing {
+	return a.systemSvc.ListDirectory(path)
 }
 
 // ============================================================================

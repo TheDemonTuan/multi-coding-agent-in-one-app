@@ -66,3 +66,30 @@ export interface OpenDialogReturnValue {
   filePaths: string[];
   bookmarks?: string[];
 }
+
+// --- Dialog options for Go backend (DialogOptions) ---
+
+export interface DialogOptions {
+  title?: string;
+  defaultPath?: string;
+  buttonLabel?: string;
+  properties?: string[];
+}
+
+export interface DialogResult {
+  Canceled: boolean;
+  FilePaths: string[];
+}
+
+// --- Directory listing types ---
+
+export interface DirectoryEntry {
+  name: string;
+  path: string;
+  isDirectory: boolean;
+}
+
+export interface DirectoryListing {
+  entries: DirectoryEntry[];
+  error?: string;
+}

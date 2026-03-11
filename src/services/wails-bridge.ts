@@ -18,6 +18,8 @@ import type {
   PatchValidation as BackendPatchValidation,
   OpenDialogOptions,
   OpenDialogReturnValue,
+  DirectoryEntry,
+  DirectoryListing,
   PatchResult as BackendPatchResult,
   PatchStatus as BackendPatchStatus,
   IMESettings as BackendIMESettings,
@@ -50,6 +52,8 @@ declare global {
           GetAppVersion(): Promise<string>;
           GetPlatform(): Promise<string>;
           GetCwd(): Promise<string>;
+          ShowOpenDialog(options: import("../types/backend").DialogOptions): Promise<import("../types/backend").DialogResult>;
+          ListDirectory(path: string): Promise<DirectoryListing>;
           // Window methods
           WindowMinimize(): Promise<void>;
           WindowMaximize(): Promise<void>;
@@ -135,6 +139,7 @@ export interface BackendAPI {
 
   // File dialogs
   showOpenDialog(options: OpenDialogOptions): Promise<OpenDialogReturnValue>;
+  listDirectory(path: string): Promise<DirectoryListing>;
 
   // Workspace management
   getWorkspaces(): Promise<any[]>;
@@ -228,9 +233,24 @@ function createWailsBridge(): BackendAPI {
     },
 
     showOpenDialog: (options) => safeCall(() => {
-      console.warn('[WailsBridge] showOpenDialog not implemented');
-      return Promise.resolve({ canceled: true, filePaths: [] } as OpenDialogReturnValue);
+      // Convert frontend options to Go DialogOptions format
+      type GoDialogOptions = import('../types/backend').DialogOptions;
+      type GoDialogResult = import('../types/backend').DialogResult;
+      const dialogOptions: GoDialogOptions = {
+        title: options.title,
+        defaultPath: options.defaultPath,
+        buttonLabel: options.buttonLabel,
+        properties: options.properties || [],
+      };
+      return app()!.ShowOpenDialog(dialogOptions).then((result: GoDialogResult) => ({
+        canceled: result.Canceled,
+        filePaths: result.FilePaths,
+      } as OpenDialogReturnValue));
     }, { canceled: true, filePaths: [] }),
+
+    listDirectory: (path) => safeCall(() => {
+      return app()!.ListDirectory(path);
+    }, { entries: [], error: 'Failed to list directory' }),
 
     getWorkspaces: () => {
       const result = workspaceService()?.GetWorkspaces();
@@ -422,6 +442,7 @@ function createStubBridge(): BackendAPI {
     setStoreValue:    noop as any,
     deleteStoreValue: noop as any,
     showOpenDialog: () => Promise.resolve({ canceled: true, filePaths: [] }),
+    listDirectory: () => Promise.resolve({ entries: [], error: 'Wails not available' }),
     getWorkspaces:              noopArr,
     createWorkspace:            () => Promise.resolve(null),
     updateWorkspace:            () => Promise.resolve(null),
