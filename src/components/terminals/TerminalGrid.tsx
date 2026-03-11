@@ -2,6 +2,7 @@ import React, { useRef, useCallback, useEffect } from 'react';
 import { useWorkspaceStore } from '../../stores/workspaceStore';
 import { TerminalCell } from './TerminalCell';
 import { WorkspaceLayout } from '../../types/workspace';
+import { WorkspaceService } from '../../services/workspace.service';
 
 export const TerminalGrid = React.memo(() => {
   // Individual selectors to prevent re-rendering when unrelated state changes
@@ -12,22 +13,10 @@ export const TerminalGrid = React.memo(() => {
   const removeTerminal = useWorkspaceStore((s) => s.removeTerminal);
   const splitTerminal = useWorkspaceStore((s) => s.splitTerminal);
 
-  // Memoize callbacks to prevent TerminalCell React.memo from breaking
-  const handleSetActiveTerminal = useCallback((id: string) => {
-    setActiveTerminal(id);
-  }, [setActiveTerminal]);
-
-  const handleRemoveTerminal = useCallback((terminalId: string) => {
-    removeTerminal(terminalId);
-  }, [removeTerminal]);
-
-  const handleSplitTerminal = useCallback((terminalId: string, direction: 'horizontal' | 'vertical') => {
-    splitTerminal(terminalId, direction);
-  }, [splitTerminal]);
-
   // Track which workspaces have been rendered (lazy rendering)
   // Once a workspace is rendered, it stays mounted to preserve terminal state
   const renderedWorkspaceIdsRef = useRef<Set<string>>(new Set());
+  const previousWorkspaceIdRef = useRef<string | null>(null);
 
   // Mark current workspace as rendered if not already
   if (currentWorkspace && !renderedWorkspaceIdsRef.current.has(currentWorkspace.id)) {
@@ -43,6 +32,25 @@ export const TerminalGrid = React.memo(() => {
       }
     });
   }, [workspaces]);
+
+  // Handle workspace switching - set active/inactive state for background optimization (Option C: Hybrid)
+  useEffect(() => {
+    const currentId = currentWorkspace?.id || null;
+    const previousId = previousWorkspaceIdRef.current;
+
+    // When switching workspaces, update active state
+    if (previousId && previousId !== currentId) {
+      // Mark previous workspace as inactive (background mode)
+      WorkspaceService.setWorkspaceActive(previousId, false);
+    }
+
+    if (currentId && currentId !== previousId) {
+      // Mark new workspace as active
+      WorkspaceService.setWorkspaceActive(currentId, true);
+    }
+
+    previousWorkspaceIdRef.current = currentId;
+  }, [currentWorkspace?.id]);
 
   if (!currentWorkspace) {
     return <div>No workspace selected</div>;
@@ -81,6 +89,19 @@ export const TerminalGrid = React.memo(() => {
 });
 
 TerminalGrid.displayName = 'TerminalGrid';
+
+// Memoize callbacks to prevent TerminalCell React.memo from breaking
+const handleSetActiveTerminal = (id: string) => {
+  useWorkspaceStore.getState().setActiveTerminal(id);
+};
+
+const handleRemoveTerminal = (terminalId: string) => {
+  useWorkspaceStore.getState().removeTerminal(terminalId);
+};
+
+const handleSplitTerminal = (terminalId: string, direction: 'horizontal' | 'vertical') => {
+  useWorkspaceStore.getState().splitTerminal(terminalId, direction);
+};
 
 // Render a single workspace grid
 const renderWorkspace = (

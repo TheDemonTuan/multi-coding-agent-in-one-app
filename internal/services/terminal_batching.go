@@ -24,39 +24,117 @@ const (
 	batchMaxSize        = 16384                 // bytes - increased from 8192 for better batching (Option C)
 	maxBufferedDataSize = 512 * 1024            // 512KB max buffered data
 	minFlushInterval    = 8 * time.Millisecond  // minimum time between flushes
+	
+	// Background workspace optimization (Option C: Hybrid)
+	backgroundBufferMaxSize = 256 * 1024        // 256KB max for background terminals
+	backgroundBufferTTL     = 30 * time.Second  // TTL for background buffered data
 )
 
 // terminalBatcher batches PTY output for a single terminal.
 type terminalBatcher struct {
-	terminalID   string
-	ctxGetter    func() context.Context
-	mu           sync.Mutex
-	buf          []byte
-	timer        *time.Timer
-	done         chan struct{}
+	terminalID    string
+	workspaceID   string                // Track workspace for background optimization
+	ctxGetter     func() context.Context
+	isActiveGetter func() bool          // Function to check if workspace is active
+	mu            sync.Mutex
+	buf           []byte
+	timer         *time.Timer
+	done          chan struct{}
 	lastFlushTime time.Time // track last flush time to enforce minFlushInterval
 	// Buffer for data events when context is nil
 	bufferedData [][]byte
 	bufferedSize int
+	// Background buffering (workspace not active)
+	backgroundBuffer   [][]byte
+	backgroundSize     int
+	backgroundBufferAt time.Time // When buffering started for TTL
+	isBackground       bool      // Whether currently in background mode
 }
 
 // newTerminalBatcher creates a batcher for the given terminal.
 func newTerminalBatcher(terminalID string, ctxGetter func() context.Context) *terminalBatcher {
 	return &terminalBatcher{
-		terminalID:    terminalID,
-		ctxGetter:     ctxGetter,
-		buf:           make([]byte, 0, batchMaxSize),
-		done:          make(chan struct{}),
-		lastFlushTime: time.Now(),
-		bufferedData:  make([][]byte, 0),
-		bufferedSize:  0,
+		terminalID:     terminalID,
+		workspaceID:    "",
+		ctxGetter:      ctxGetter,
+		isActiveGetter: func() bool { return true }, // Default to active
+		buf:            make([]byte, 0, batchMaxSize),
+		done:           make(chan struct{}),
+		lastFlushTime:  time.Now(),
+		bufferedData:   make([][]byte, 0),
+		bufferedSize:   0,
+		backgroundBuffer: make([][]byte, 0),
+		backgroundSize:   0,
+		isBackground:     false,
 	}
+}
+
+// SetWorkspace sets the workspace ID for this terminal's batcher.
+func (b *terminalBatcher) SetWorkspace(workspaceID string) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.workspaceID = workspaceID
+}
+
+// SetActive sets whether this terminal's workspace is currently active.
+// When inactive, data is buffered instead of emitted to reduce CPU/memory usage.
+func (b *terminalBatcher) SetActive(active bool) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	
+	if active && b.isBackground {
+		// Transitioning from background to active - will flush on next write
+		b.isBackground = false
+		log.Printf("[INFO] Terminal %s: workspace active, will flush background buffer", b.terminalID)
+	} else if !active {
+		b.isBackground = true
+		b.backgroundBufferAt = time.Now()
+		log.Printf("[INFO] Terminal %s: workspace inactive, buffering data", b.terminalID)
+	}
+}
+
+// GetBacklog returns the buffered background data as a single string.
+// Used when workspace becomes active to catch up on missed output.
+func (b *terminalBatcher) GetBacklog() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	
+	if len(b.backgroundBuffer) == 0 {
+		return ""
+	}
+	
+	// Concatenate all buffered data
+	totalSize := 0
+	for _, data := range b.backgroundBuffer {
+		totalSize += len(data)
+	}
+	
+	result := make([]byte, 0, totalSize)
+	for _, data := range b.backgroundBuffer {
+		result = append(result, data...)
+	}
+	
+	return string(result)
+}
+
+// ClearBacklog clears the background buffer after it has been retrieved.
+func (b *terminalBatcher) ClearBacklog() {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.backgroundBuffer = make([][]byte, 0)
+	b.backgroundSize = 0
 }
 
 // write accepts data from the PTY and schedules a flush.
 func (b *terminalBatcher) write(data []byte) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
+
+	// If in background mode, buffer data instead of emitting
+	if b.isBackground {
+		b.bufferBackgroundLocked(data)
+		return
+	}
 
 	b.buf = append(b.buf, data...)
 
@@ -74,6 +152,43 @@ func (b *terminalBatcher) write(data []byte) {
 			b.flushLocked()
 		})
 	}
+}
+
+// bufferBackgroundLocked buffers data when workspace is inactive.
+// Implements TTL and size limits to prevent memory leaks.
+// Must be called with mu held.
+func (b *terminalBatcher) bufferBackgroundLocked(data []byte) {
+	// Check TTL - discard old data
+	if time.Since(b.backgroundBufferAt) > backgroundBufferTTL {
+		log.Printf("[WARN] Terminal %s: background buffer TTL exceeded, discarding old data", b.terminalID)
+		b.backgroundBuffer = make([][]byte, 0)
+		b.backgroundSize = 0
+		b.backgroundBufferAt = time.Now()
+	}
+
+	// Check size limit - discard oldest if exceeded
+	if b.backgroundSize+len(data) > backgroundBufferMaxSize {
+		// Remove oldest entries until we have room
+		for len(b.backgroundBuffer) > 0 && b.backgroundSize+len(data) > backgroundBufferMaxSize {
+			oldest := b.backgroundBuffer[0]
+			b.backgroundBuffer = b.backgroundBuffer[1:]
+			b.backgroundSize -= len(oldest)
+		}
+		
+		// If still too large, clear everything and start fresh
+		if b.backgroundSize+len(data) > backgroundBufferMaxSize {
+			log.Printf("[WARN] Terminal %s: background buffer full, dropping data", b.terminalID)
+			b.backgroundBuffer = make([][]byte, 0)
+			b.backgroundSize = 0
+			b.backgroundBufferAt = time.Now()
+		}
+	}
+
+	// Add data to buffer
+	dataCopy := make([]byte, len(data))
+	copy(dataCopy, data)
+	b.backgroundBuffer = append(b.backgroundBuffer, dataCopy)
+	b.backgroundSize += len(data)
 }
 
 // flushLocked sends buffered data to the frontend. Must be called with mu held.
@@ -167,4 +282,11 @@ func (b *terminalBatcher) stop() {
 	default:
 		close(b.done)
 	}
+}
+
+// getWorkspaceID returns the workspace ID for this terminal.
+func (b *terminalBatcher) getWorkspaceID() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.workspaceID
 }

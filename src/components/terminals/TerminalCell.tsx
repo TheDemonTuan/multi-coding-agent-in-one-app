@@ -172,6 +172,18 @@ export const TerminalCell = React.memo<TerminalCellProps>(({
   const [spawnError, setSpawnError] = useState<string | null>(null);
   const errorToastTimersRef = useRef<NodeJS.Timeout[]>([]);
 
+  // Listen for backlog events (Option C: Hybrid background optimization)
+  React.useEffect(() => {
+    const handleBacklog = (event: CustomEvent<{ terminalId: string; backlog: string }>) => {
+      if (event.detail.terminalId === terminal.id && terminalRef.current) {
+        terminalRef.current.write(event.detail.backlog);
+      }
+    };
+
+    window.addEventListener('terminal-backlog', handleBacklog as EventListener);
+    return () => window.removeEventListener('terminal-backlog', handleBacklog as EventListener);
+  }, [terminal.id]);
+
   // Check Vietnamese IME patch status for Claude Code terminals
   React.useEffect(() => {
     if (terminal.agent?.type === 'claude-code') {

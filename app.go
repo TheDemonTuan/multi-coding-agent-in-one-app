@@ -123,10 +123,11 @@ func (a *App) WindowIsMaximized() bool {
 // SpawnTerminal spawns a new terminal.
 func (a *App) SpawnTerminal(id string, cwd string, workspaceId string, cols int, rows int) map[string]interface{} {
 	result := a.terminalSvc.SpawnTerminal(services.SpawnTerminalOptions{
-		ID:   id,
-		CWD:  cwd,
-		Cols: cols,
-		Rows: rows,
+		ID:          id,
+		CWD:         cwd,
+		Cols:        cols,
+		Rows:        rows,
+		WorkspaceID: workspaceId,
 	})
 	return map[string]interface{}{
 		"success": result.Success,
@@ -139,11 +140,12 @@ func (a *App) SpawnTerminal(id string, cwd string, workspaceId string, cols int,
 func (a *App) SpawnTerminalWithAgent(id string, cwd string, agentType string, workspaceId string, cols int, rows int) map[string]interface{} {
 	fmt.Printf("[DEBUG] SpawnTerminalWithAgent: id=%s, agentType=%s, cwd=%s, workspaceId=%s, cols=%d, rows=%d\n", id, agentType, cwd, workspaceId, cols, rows)
 	result := a.terminalSvc.SpawnTerminalWithAgent(services.SpawnAgentOptions{
-		ID:        id,
-		CWD:       cwd,
-		AgentType: agentType,
-		Cols:      cols,
-		Rows:      rows,
+		ID:          id,
+		CWD:         cwd,
+		AgentType:   agentType,
+		Cols:        cols,
+		Rows:        rows,
+		WorkspaceID: workspaceId,
 	})
 	fmt.Printf("[DEBUG] SpawnTerminalWithAgent result: success=%v, pid=%d, error=%s\n", result.Success, result.PID, result.Error)
 
@@ -189,6 +191,31 @@ func (a *App) ResizeTerminal(id string, cols int, rows int) map[string]interface
 // GetTerminalStatus returns the status of a terminal.
 func (a *App) GetTerminalStatus(id string) map[string]interface{} {
 	return a.terminalSvc.GetTerminalStatus(id)
+}
+
+// SetWorkspaceActive sets whether a workspace is active (for background optimization).
+func (a *App) SetWorkspaceActive(workspaceID string, active bool) map[string]interface{} {
+	a.terminalSvc.SetWorkspaceActive(workspaceID, active)
+	return map[string]interface{}{
+		"success": true,
+	}
+}
+
+// GetTerminalBacklog returns buffered data for a terminal.
+func (a *App) GetTerminalBacklog(terminalID string) map[string]interface{} {
+	backlog := a.terminalSvc.GetTerminalBacklog(terminalID)
+	return map[string]interface{}{
+		"success": true,
+		"backlog": backlog,
+	}
+}
+
+// ClearTerminalBacklog clears the backlog for a terminal.
+func (a *App) ClearTerminalBacklog(terminalID string) map[string]interface{} {
+	a.terminalSvc.ClearTerminalBacklog(terminalID)
+	return map[string]interface{}{
+		"success": true,
+	}
 }
 
 // ============================================================================

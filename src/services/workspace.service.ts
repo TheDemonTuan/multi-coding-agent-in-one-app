@@ -146,6 +146,59 @@ class WorkspaceServiceClass {
       return { success: false, cleaned: 0 };
     }
   }
+
+  /**
+   * Set workspace active state (for background optimization - Option C: Hybrid)
+   */
+  async setWorkspaceActive(workspaceId: string, active: boolean): Promise<boolean> {
+    this.log.info('Setting workspace active state', { workspaceId, active });
+
+    if (!isWailsAvailable()) {
+      return false;
+    }
+
+    try {
+      await backendAPI.setWorkspaceActive(workspaceId, active);
+      return true;
+    } catch (error: any) {
+      this.log.error('Error setting workspace active state', { workspaceId, error: error.message });
+      return false;
+    }
+  }
+
+  /**
+   * Get terminal backlog (buffered data from when workspace was inactive)
+   */
+  async getTerminalBacklog(terminalId: string): Promise<string> {
+    if (!isWailsAvailable()) {
+      return '';
+    }
+
+    try {
+      const result = await backendAPI.getTerminalBacklog(terminalId);
+      return result.backlog || '';
+    } catch (error: any) {
+      this.log.error('Error getting terminal backlog', { terminalId, error: error.message });
+      return '';
+    }
+  }
+
+  /**
+   * Clear terminal backlog after retrieving
+   */
+  async clearTerminalBacklog(terminalId: string): Promise<boolean> {
+    if (!isWailsAvailable()) {
+      return false;
+    }
+
+    try {
+      await backendAPI.clearTerminalBacklog(terminalId);
+      return true;
+    } catch (error: any) {
+      this.log.error('Error clearing terminal backlog', { terminalId, error: error.message });
+      return false;
+    }
+  }
 }
 
 // Singleton instance

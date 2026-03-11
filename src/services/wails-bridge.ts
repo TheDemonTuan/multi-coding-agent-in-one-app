@@ -60,6 +60,9 @@ declare global {
           KillTerminal(id: string): Promise<{ success: boolean; error?: string }>;
           ResizeTerminal(id: string, cols: number, rows: number): Promise<{ success: boolean; error?: string }>;
           GetTerminalStatus(id: string): Promise<{ exists: boolean; status: string; pid?: number }>;
+          SetWorkspaceActive(workspaceId: string, active: boolean): Promise<{ success: boolean }>;
+          GetTerminalBacklog(terminalId: string): Promise<{ success: boolean; backlog: string }>;
+          ClearTerminalBacklog(terminalId: string): Promise<{ success: boolean }>;
           // Store methods
           GetValue(key: string): Promise<any>;
           SetValue(key: string, value: any): Promise<{ success: boolean; error?: string }>;
@@ -148,6 +151,9 @@ export interface BackendAPI {
   deleteWorkspace(id: string): Promise<{ success: boolean; error?: string }>;
   switchWorkspace(id: string): Promise<any>;
   cleanupWorkspaceTerminals(workspaceId: string): Promise<{ success: boolean; cleaned?: number }>;
+  setWorkspaceActive(workspaceId: string, active: boolean): Promise<{ success: boolean }>;
+  getTerminalBacklog(terminalId: string): Promise<{ success: boolean; backlog: string }>;
+  clearTerminalBacklog(terminalId: string): Promise<{ success: boolean }>;
 
   // Template management
   getTemplates(): Promise<any[]>;
@@ -385,6 +391,9 @@ function createWailsBridge(): BackendAPI {
       console.warn('[WailsBridge] cleanupWorkspaceTerminals not implemented');
       return Promise.resolve({ success: false, cleaned: 0 });
     }, { success: false, cleaned: 0 }),
+    setWorkspaceActive:         (workspaceId, active) => safeCall(() => app()!.SetWorkspaceActive(workspaceId, active), { success: false }),
+    getTerminalBacklog:         (terminalId) => safeCall(() => app()!.GetTerminalBacklog(terminalId), { success: false, backlog: '' }),
+    clearTerminalBacklog:       (terminalId) => safeCall(() => app()!.ClearTerminalBacklog(terminalId), { success: false }),
 
     getTemplates:   ()     => safeCall(() => templateService()?.GetTemplates() ?? Promise.resolve([]), []),
     saveTemplate:   (t)    => safeCall(() => templateService()?.SaveTemplate(t) ?? Promise.resolve({ success: false, error: 'TemplateService unavailable' }), { success: false, error: 'TemplateService failed' }),
@@ -462,6 +471,9 @@ function createStubBridge(): BackendAPI {
     onTerminalStarted: noopUnsubscribe,
     onTerminalExit:    noopUnsubscribe,
     onTerminalError:   noopUnsubscribe,
+    setWorkspaceActive:            () => Promise.resolve({ success: false }),
+    getTerminalBacklog:            () => Promise.resolve({ success: false, backlog: '' }),
+    clearTerminalBacklog:          () => Promise.resolve({ success: false }),
     applyVietnameseImePatch:       noop as any,
     checkVietnameseImePatchStatus: () => Promise.resolve({ isPatched: false, claudePath: '', hasBackup: false, installedVia: 'unknown' }),
     getVietnameseImeSettings:      () => Promise.resolve({ enabled: false, autoPatch: false }),

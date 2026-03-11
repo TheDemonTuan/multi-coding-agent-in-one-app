@@ -37,18 +37,23 @@ type ptyProcess struct {
 
 // TerminalService manages all PTY processes.
 type TerminalService struct {
-	Ctx           context.Context // Set by App.startup()
-	mu            sync.RWMutex
-	processes     map[string]*ptyProcess
-	pendingEvents []pendingEvent  // Queue for events when context is nil
-	eventsMu      sync.Mutex      // Protects pendingEvents
+	Ctx              context.Context // Set by App.startup()
+	mu               sync.RWMutex
+	processes        map[string]*ptyProcess
+	pendingEvents    []pendingEvent  // Queue for events when context is nil
+	eventsMu         sync.Mutex      // Protects pendingEvents
+	
+	// Workspace active state tracking (Option C: Hybrid background optimization)
+	workspaceActiveMu sync.RWMutex
+	workspaceActive   map[string]bool // workspaceID -> active state
 }
 
 // NewTerminalService creates a new TerminalService.
 func NewTerminalService() *TerminalService {
 	return &TerminalService{
-		processes:     make(map[string]*ptyProcess),
-		pendingEvents: make([]pendingEvent, 0),
+		processes:       make(map[string]*ptyProcess),
+		pendingEvents:   make([]pendingEvent, 0),
+		workspaceActive: make(map[string]bool),
 	}
 }
 
@@ -116,10 +121,11 @@ func (t *TerminalService) SetContext(ctx context.Context) {
 
 // SpawnTerminalOptions mirrors the Electron spawn options.
 type SpawnTerminalOptions struct {
-	ID   string `json:"id"`
-	CWD  string `json:"cwd,omitempty"`
-	Cols int    `json:"cols,omitempty"`
-	Rows int    `json:"rows,omitempty"`
+	ID          string `json:"id"`
+	CWD         string `json:"cwd,omitempty"`
+	Cols        int    `json:"cols,omitempty"`
+	Rows        int    `json:"rows,omitempty"`
+	WorkspaceID string `json:"workspaceId,omitempty"` // For background optimization
 }
 
 // SpawnTerminal spawns a new PTY process.
@@ -155,6 +161,11 @@ func (t *TerminalService) SpawnTerminal(opts SpawnTerminalOptions) SpawnResult {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	batcher := newTerminalBatcher(opts.ID, t.getCtx)
+	if opts.WorkspaceID != "" {
+		batcher.SetWorkspace(opts.WorkspaceID)
+		// Check if workspace is active
+		batcher.SetActive(t.IsWorkspaceActive(opts.WorkspaceID))
+	}
 	proc := &ptyProcess{
 		id:         opts.ID,
 		pty:        handle,
@@ -183,13 +194,14 @@ func (t *TerminalService) SpawnTerminal(opts SpawnTerminalOptions) SpawnResult {
 
 // SpawnAgentOptions mirrors the Electron spawn-terminal-with-agent options.
 type SpawnAgentOptions struct {
-	ID        string   `json:"id"`
-	CWD       string   `json:"cwd,omitempty"`
-	AgentType string   `json:"agentType"`
-	Command   string   `json:"command,omitempty"` // override command
-	Args      []string `json:"args,omitempty"`    // additional args
-	Cols      int      `json:"cols,omitempty"`
-	Rows      int      `json:"rows,omitempty"`
+	ID          string   `json:"id"`
+	CWD         string   `json:"cwd,omitempty"`
+	AgentType   string   `json:"agentType"`
+	Command     string   `json:"command,omitempty"` // override command
+	Args        []string `json:"args,omitempty"`    // additional args
+	Cols        int      `json:"cols,omitempty"`
+	Rows        int      `json:"rows,omitempty"`
+	WorkspaceID string   `json:"workspaceId,omitempty"` // For background optimization
 }
 
 // SpawnTerminalWithAgent spawns a PTY running an AI agent command.
@@ -257,6 +269,11 @@ func (t *TerminalService) SpawnTerminalWithAgent(opts SpawnAgentOptions) SpawnRe
 
 	ctx, cancel := context.WithCancel(context.Background())
 	batcher := newTerminalBatcher(opts.ID, t.getCtx)
+	if opts.WorkspaceID != "" {
+		batcher.SetWorkspace(opts.WorkspaceID)
+		// Check if workspace is active
+		batcher.SetActive(t.IsWorkspaceActive(opts.WorkspaceID))
+	}
 	proc := &ptyProcess{
 		id:         opts.ID,
 		pty:        handle,
@@ -561,4 +578,67 @@ func getAgentInstallCommand(agentType, agentCmd string) string {
 		return cmd
 	}
 	return ""
+}
+
+// ============================================================================
+// Workspace Active State Tracking (Option C: Hybrid background optimization)
+// ============================================================================
+
+// SetWorkspaceActive sets whether a workspace is currently active (visible to user).
+// When inactive, terminal data is buffered instead of emitted to reduce CPU/memory usage.
+func (t *TerminalService) SetWorkspaceActive(workspaceID string, active bool) {
+	t.workspaceActiveMu.Lock()
+	t.workspaceActive[workspaceID] = active
+	t.workspaceActiveMu.Unlock()
+
+	// Update all terminals belonging to this workspace
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+
+	for _, proc := range t.processes {
+		if proc.batcher != nil && proc.batcher.getWorkspaceID() == workspaceID {
+			proc.batcher.SetActive(active)
+		}
+	}
+
+	log.Printf("[INFO] Workspace %s: set active=%v", workspaceID, active)
+}
+
+// IsWorkspaceActive returns whether a workspace is currently active.
+func (t *TerminalService) IsWorkspaceActive(workspaceID string) bool {
+	t.workspaceActiveMu.RLock()
+	defer t.workspaceActiveMu.RUnlock()
+	
+	// Default to true if not set (workspace is active by default)
+	active, exists := t.workspaceActive[workspaceID]
+	if !exists {
+		return true
+	}
+	return active
+}
+
+// GetTerminalBacklog returns buffered data for a terminal when workspace becomes active.
+func (t *TerminalService) GetTerminalBacklog(terminalID string) string {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+
+	proc, exists := t.processes[terminalID]
+	if !exists || proc.batcher == nil {
+		return ""
+	}
+
+	return proc.batcher.GetBacklog()
+}
+
+// ClearTerminalBacklog clears the backlog after it has been retrieved.
+func (t *TerminalService) ClearTerminalBacklog(terminalID string) {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+
+	proc, exists := t.processes[terminalID]
+	if !exists || proc.batcher == nil {
+		return
+	}
+
+	proc.batcher.ClearBacklog()
 }
