@@ -12,14 +12,16 @@ import (
 // ============================================================================
 // Terminal Data Batching — optimizes xterm.js rendering
 // ============================================================================
-// Batches PTY output: flush every 16ms (~60fps) OR when buffer >= 8192 bytes.
+// Batches PTY output: flush every 12ms (~83fps) OR when buffer >= 16384 bytes.
+// Optimized for Option C: Balanced - faster flush with larger batch size
+// to reduce overhead while maintaining responsiveness.
 // Data is passed as string which Wails serializes as a JSON string.
 // Buffers data when context is nil and flushes when context becomes available.
 // ============================================================================
 
 const (
-	batchFlushInterval  = 16 * time.Millisecond // ~60fps
-	batchMaxSize        = 8192                  // bytes - increased for better batching
+	batchFlushInterval  = 12 * time.Millisecond // ~83fps - reduced from 16ms for Option C: Balanced
+	batchMaxSize        = 16384                 // bytes - increased from 8192 for better batching (Option C)
 	maxBufferedDataSize = 512 * 1024            // 512KB max buffered data
 	minFlushInterval    = 8 * time.Millisecond  // minimum time between flushes
 )

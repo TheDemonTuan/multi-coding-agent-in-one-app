@@ -112,6 +112,11 @@ export const TerminalCell = React.memo<TerminalCellProps>(({
   const isInitialFitCompleteRef = useRef(false);
   const commandBlockTrackerRef = useRef<CommandBlockTracker | null>(null);
 
+  // Performance tracking for conditional WebGL (Option C: Balanced)
+  const totalDataReceivedRef = useRef<number>(0);
+  const writeTimestampsRef = useRef<number[]>([]);
+  const webglLoadAttemptedRef = useRef<boolean>(false);
+
   // Actions — stable references in Zustand, destructuring is fine here
   const { restartTerminal, getNextWorkspace, getPreviousWorkspace, setCurrentWorkspace, switchTerminalAgent } = useWorkspaceStore();
   const { updateTerminalStatus, setTerminalProcessId, isTerminalRestarting } = useWorkspaceStore();
@@ -135,6 +140,13 @@ export const TerminalCell = React.memo<TerminalCellProps>(({
     // attachCustomKeyEventHandler returns void, so we store a cleanup flag instead
     customKeyHandlerCleanup?: () => void;
   }>({});
+
+  // FPS capping for terminal writes (Option C: Balanced)
+  // Limit to max 30 writes/sec to prevent overwhelming xterm.js during data floods
+  const MAX_WRITES_PER_SECOND = 30;
+  const pendingWriteBufferRef = useRef<string[]>([]);
+  const lastWriteTimeRef = useRef<number>(0);
+  const writeTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
 
 
@@ -476,24 +488,27 @@ export const TerminalCell = React.memo<TerminalCellProps>(({
       fontFamily: '"Cascadia Code", "Fira Code", Consolas, "Courier New", monospace',
       allowProposedApi: true,
       // Configure scrollback buffer to prevent memory bloat (VAL-PERF-002)
-      scrollback: 500, // Reduced from 1000 to 500 lines for optimal memory usage
+      scrollback: 300, // Balanced: reduced from 500 to 300 lines for optimal memory/performance
 
       // Theme applied immediately to prevent white text on first load
       theme: theme === 'dark' ? DARK_THEME : LIGHT_THEME,
 
       // Performance optimizations (VAL-PERF-008)
-      drawBoldTextInBrightColors: true,
+      drawBoldTextInBrightColors: false, // Disable to reduce rendering overhead
       minimumContrastRatio: 1, // Skip contrast recalculation for performance
 
-      // Smooth scrolling improvements
-      fastScrollSensitivity: 5,
-      smoothScrollDuration: 125,
+      // Smooth scrolling improvements - disabled for instant scroll response (Option C)
+      fastScrollSensitivity: 10, // Increased from 5 for faster scroll
+      smoothScrollDuration: 0, // Disabled for instant scroll response (was 125ms)
 
       // Windows/ConPTY specific fixes to prevent text duplication/scrambling
       // macOptionIsMeta: false prevents double character input on some systems
       macOptionIsMeta: false,
       // Better handling of wide characters (CJK, emoji)
       allowTransparency: false,
+      
+      // Additional performance optimizations
+      convertEol: true, // Reduce parsing overhead
     });
 
     const fitAddon = new FitAddon();
@@ -585,7 +600,7 @@ export const TerminalCell = React.memo<TerminalCellProps>(({
             }, 10);
           }
         }
-      }, 200); // 200ms debounce to prevent rapid resize events (increased from 150ms)
+      }, 250); // 250ms debounce for Option C: Balanced (increased from 200ms)
     });
     resizeObserverRef.current.observe(containerRef.current);
 
@@ -599,9 +614,48 @@ export const TerminalCell = React.memo<TerminalCellProps>(({
 
     // Setup event listeners (VAL-MEM-003)
 
+    // Helper function: rate-limited terminal write with FPS capping (Option C)
+    const writeWithRateLimit = (data: string) => {
+      if (!terminalRef.current) return;
+      
+      const now = Date.now();
+      
+      // Clean up old timestamps (older than 1 second)
+      writeTimestampsRef.current = writeTimestampsRef.current.filter(ts => now - ts < 1000);
+      
+      // Check if we're over the rate limit
+      if (writeTimestampsRef.current.length >= MAX_WRITES_PER_SECOND) {
+        // Buffer the data and schedule for later
+        pendingWriteBufferRef.current.push(data);
+        
+        // Schedule drain if not already scheduled
+        if (!writeTimeoutRef.current) {
+          const oldestTimestamp = writeTimestampsRef.current[0];
+          const delay = Math.max(1000 - (now - oldestTimestamp), 16);
+          writeTimeoutRef.current = setTimeout(() => {
+            writeTimeoutRef.current = null;
+            // Drain pending buffer
+            const buffered = pendingWriteBufferRef.current.join('');
+            pendingWriteBufferRef.current = [];
+            if (buffered && terminalRef.current) {
+              terminalRef.current.write(buffered);
+            }
+          }, delay);
+        }
+        return;
+      }
+      
+      // Record this write timestamp
+      writeTimestampsRef.current.push(now);
+      terminalRef.current.write(data);
+    };
+
     listenersRef.current.unsubscribeData = backendAPI.onTerminalData((event: { terminalId: string; data: string }) => {
       if (event.terminalId === terminal.id && terminalRef.current) {
         let outputData = event.data;
+        
+        // Track total data received for WebGL conditional loading (Option C)
+        totalDataReceivedRef.current += outputData.length;
         
         // Parse OSC 133 shell integration markers if present
         const hasOSC = outputData.includes('\x1b]133;');
@@ -618,7 +672,9 @@ export const TerminalCell = React.memo<TerminalCellProps>(({
           dataBufferRef.current.push(outputData);
           return;
         }
-        terminalRef.current.write(outputData);
+        
+        // Use rate-limited write (Option C: FPS capping)
+        writeWithRateLimit(outputData);
 
         const buffer = terminalRef.current.buffer.active;
         if (buffer.viewportY < buffer.baseY - buffer.viewportY) {
@@ -777,6 +833,14 @@ export const TerminalCell = React.memo<TerminalCellProps>(({
         fitDebounceRef.current = null;
       }
 
+      // Clear write timeout and pending buffer (Option C)
+      if (writeTimeoutRef.current) {
+        clearTimeout(writeTimeoutRef.current);
+        writeTimeoutRef.current = null;
+      }
+      pendingWriteBufferRef.current = [];
+      writeTimestampsRef.current = [];
+
       // Disconnect ResizeObserver to prevent layout observation after unmount
       if (resizeObserverRef.current) {
         resizeObserverRef.current.disconnect();
@@ -915,23 +979,28 @@ export const TerminalCell = React.memo<TerminalCellProps>(({
     }
   }, [theme]);
 
-  // Lazy load WebGL addon when terminal becomes active
-  // This reduces startup memory by deferring WebGL initialization until user interacts with terminal
-  useEffect(() => {
-    if (isActive && terminalRef.current && !webglAddonRef.current) {
-      try {
-        const webglAddon = new WebglAddon();
-        webglAddon.onContextLoss(() => {
-          webglAddon.dispose();
-          webglAddonRef.current = null;
-        });
-        terminalRef.current.loadAddon(webglAddon);
-        webglAddonRef.current = webglAddon;
-      } catch (err) {
-        // WebGL not available or failed to load, fallback to Canvas renderer
+    // Lazy load WebGL addon when terminal becomes active - Option C: Conditional loading
+    // WebGL is now loaded on-demand based on data volume to reduce memory overhead
+    useEffect(() => {
+      if (isActive && terminalRef.current && !webglAddonRef.current && !webglLoadAttemptedRef.current) {
+        // Only attempt WebGL load if terminal has received significant data (>10KB)
+        // This prevents unnecessary WebGL overhead for light terminal usage
+        if (totalDataReceivedRef.current > 10 * 1024) {
+          webglLoadAttemptedRef.current = true;
+          try {
+            const webglAddon = new WebglAddon();
+            webglAddon.onContextLoss(() => {
+              webglAddon.dispose();
+              webglAddonRef.current = null;
+            });
+            terminalRef.current.loadAddon(webglAddon);
+            webglAddonRef.current = webglAddon;
+          } catch (err) {
+            // WebGL not available or failed to load, fallback to Canvas renderer
+          }
+        }
       }
-    }
-  }, [isActive, terminal.id]);
+    }, [isActive, terminal.id]);
 
   // When becoming active: only focus the terminal, do NOT call fit().
   // When becoming inactive: blur the terminal to hide cursor.

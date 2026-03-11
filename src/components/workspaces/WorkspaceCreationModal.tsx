@@ -116,6 +116,7 @@ export const WorkspaceCreationModal: React.FC<WorkspaceCreationModalProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [iconSearchQuery, setIconSearchQuery] = useState('');
   const [draggedAgent, setDraggedAgent] = useState<AgentType | null>(null);
+  const [slotAssignments, setSlotAssignments] = useState<Record<number, AgentType | null>>({});
 
   const stepRef = useRef<HTMLDivElement>(null);
   const spawnTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -156,12 +157,23 @@ export const WorkspaceCreationModal: React.FC<WorkspaceCreationModalProps> = ({
       setWorkingDir(editingWorkspace.terminals[0]?.cwd || './');
       const allocation = extractAgentAllocation(editingWorkspace.terminals);
       setAgentAllocation(allocation);
+      
+      // Build slot assignments from terminal order
+      const newSlotAssignments: Record<number, AgentType | null> = {};
+      editingWorkspace.terminals.forEach((term, index) => {
+        if (term.agent && term.agent.type !== 'none') {
+          newSlotAssignments[index] = term.agent.type;
+        } else {
+          newSlotAssignments[index] = null;
+        }
+      });
+      setSlotAssignments(newSlotAssignments);
 
       const template = getTemplateByLayout(editingWorkspace.columns, editingWorkspace.rows);
       if (template) {
         setSelectedTemplate(template);
+        setCurrentStep('agents');
       }
-      setCurrentStep('agents');
     }
   }, [editingWorkspace, isEditMode, isOpen]);
 
@@ -264,6 +276,18 @@ export const WorkspaceCreationModal: React.FC<WorkspaceCreationModalProps> = ({
       allocation[keys[i]]++;
     }
     setAgentAllocation(allocation);
+    
+    // Auto-distribute agents to slots sequentially
+    const newSlotAssignments: Record<number, AgentType | null> = {};
+    let slotIndex = 0;
+    for (let i = 0; i < agentTypeInfo.length; i++) {
+      const agentType = agentTypeInfo[i].type;
+      const count = allocation[agentAllocationKeys[agentType]] || 0;
+      for (let j = 0; j < count && slotIndex < totalTerminals; j++) {
+        newSlotAssignments[slotIndex++] = agentType;
+      }
+    }
+    setSlotAssignments(newSlotAssignments);
   };
 
   const handleReset = () => {
@@ -271,6 +295,7 @@ export const WorkspaceCreationModal: React.FC<WorkspaceCreationModalProps> = ({
       claudeCode: 0, opencode: 0, droid: 0, geminiCli: 0, cursor: 0, codex: 0,
       ohMyPi: 0, aider: 0, goose: 0, warp: 0, amp: 0, kiro: 0,
     });
+    setSlotAssignments({});
   };
 
   const handleCommandInput = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -473,9 +498,23 @@ export const WorkspaceCreationModal: React.FC<WorkspaceCreationModalProps> = ({
     if (!key) return;
 
     setAgentAllocation(prev => {
+      const existingAgent = slotAssignments[slotIndex];
+      if (existingAgent && existingAgent !== agentType) {
+        const existingKey = agentAllocationKeys[existingAgent];
+        if (existingKey && prev[existingKey] > 0) {
+          return { ...prev, [existingKey]: prev[existingKey] - 1, [key]: Math.min(prev[key] + 1, totalTerminals) };
+        }
+      }
       if (prev[key] >= totalTerminals) return prev;
       return { ...prev, [key]: prev[key] + 1 };
     });
+
+    setSlotAssignments(prev => ({ ...prev, [slotIndex]: agentType }));
+  };
+
+  // Helper to get agent type for a specific slot
+  const getAgentForSlot = (slotIndex: number): AgentType | null => {
+    return slotAssignments[slotIndex] || null;
   };
 
   const handleCreateWorkspace = async () => {
@@ -484,56 +523,33 @@ export const WorkspaceCreationModal: React.FC<WorkspaceCreationModalProps> = ({
       return;
     }
 
+    // Build agent assignments from slot assignments
     const finalAgentAssignments: Record<string, AgentConfig> = {};
-    Object.entries(agentAssignments).forEach(([key, config], index) => {
-      finalAgentAssignments[`term-${index}`] = config;
-    });
+    for (let i = 0; i < totalTerminals; i++) {
+      const agentType = slotAssignments[i] || 'none';
+      finalAgentAssignments[`term-${i}`] = {
+        type: agentType,
+        enabled: agentType !== 'none',
+      };
+    }
 
     if (isEditMode && editingWorkspace) {
       const getShell = () => editingWorkspace.terminals[0]?.shell || 'powershell.exe';
       const newTerminals = [];
       const totalNewTerminals = selectedTemplate.columns * selectedTemplate.rows;
-      let terminalIndex = 0;
 
-      const allocateAgent = (type: AgentType, count: number) => {
-        for (let i = 0; i < count && terminalIndex < totalNewTerminals; i++) {
-          newTerminals.push({
-            id: generateId(),
-            title: `Terminal ${terminalIndex + 1}`,
-            cwd: workingDir,
-            shell: getShell(),
-            status: 'stopped' as const,
-            agent: { type, enabled: true },
-          });
-          terminalIndex++;
-        }
-      };
-
-      allocateAgent('claude-code', agentAllocation.claudeCode);
-      allocateAgent('opencode', agentAllocation.opencode);
-      allocateAgent('droid', agentAllocation.droid);
-      allocateAgent('gemini-cli', agentAllocation.geminiCli);
-      allocateAgent('cursor', agentAllocation.cursor);
-      allocateAgent('codex', agentAllocation.codex);
-      allocateAgent('oh-my-pi', agentAllocation.ohMyPi);
-      allocateAgent('aider', agentAllocation.aider);
-      allocateAgent('goose', agentAllocation.goose);
-      allocateAgent('warp', agentAllocation.warp);
-      allocateAgent('amp', agentAllocation.amp);
-      allocateAgent('kiro', agentAllocation.kiro);
-
-      while (terminalIndex < totalNewTerminals) {
+      // Build terminals from slot assignments
+      for (let i = 0; i < totalNewTerminals; i++) {
+        const agentType = slotAssignments[i] || 'none';
         newTerminals.push({
           id: generateId(),
-          title: `Terminal ${terminalIndex + 1}`,
+          title: `Terminal ${i + 1}`,
           cwd: workingDir,
           shell: getShell(),
           status: 'stopped' as const,
-          agent: { type: 'none' as const, enabled: false },
+          agent: { type: agentType, enabled: agentType !== 'none' },
         });
-        terminalIndex++;
       }
-
       await updateWorkspace(editingWorkspace.id, {
         name: workspaceName,
         icon: selectedIcon,
@@ -634,6 +650,7 @@ export const WorkspaceCreationModal: React.FC<WorkspaceCreationModalProps> = ({
       claudeCode: 0, opencode: 0, droid: 0, geminiCli: 0, cursor: 0, codex: 0,
       ohMyPi: 0, aider: 0, goose: 0, warp: 0, amp: 0, kiro: 0,
     });
+    setSlotAssignments({});
     setCurrentStep('template');
     setSearchQuery('');
     setIconSearchQuery('');
@@ -909,9 +926,8 @@ export const WorkspaceCreationModal: React.FC<WorkspaceCreationModalProps> = ({
                           }}
                         >
                           {Array.from({ length: totalTerminals }).map((_, i) => {
-                            const key = `terminal-${i}`;
-                            const agent = agentAssignments[key];
-                            const agentInfo = agentTypeInfo.find(a => a.type === agent?.type);
+                            const agentType = getAgentForSlot(i);
+                            const agentInfo = agentTypeInfo.find(a => a.type === agentType);
                             return (
                               <div
                                 key={i}

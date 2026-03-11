@@ -10,6 +10,7 @@ export interface UseTerminalOptions {
 }
 
 // Optimized terminal options for better performance (VAL-PERF-008)
+// Option C: Balanced - performance optimizations
 const OPTIMIZED_OPTIONS: ITerminalOptions = {
   cursorBlink: true,
   fontSize: 14,
@@ -29,11 +30,18 @@ const OPTIMIZED_OPTIONS: ITerminalOptions = {
   },
   allowProposedApi: true,
   // Configure scrollback buffer to prevent memory bloat (VAL-PERF-002)
-  scrollback: 1000, // Limit to 1000 lines for optimal memory usage
+  scrollback: 300, // Updated for Option C: Balanced performance optimization
 
   // Performance optimizations (VAL-PERF-008)
-  drawBoldTextInBrightColors: true,
+  drawBoldTextInBrightColors: false, // Disable to reduce rendering overhead
   minimumContrastRatio: 1, // Skip contrast recalculation for performance
+  
+  // Smooth scrolling improvements - disabled for instant scroll response (Option C)
+  fastScrollSensitivity: 10, // Increased for faster scroll
+  smoothScrollDuration: 0, // Disabled for instant scroll response
+  
+  // Additional performance optimizations
+  convertEol: true, // Reduce parsing overhead
 };
 
 export function useTerminal(

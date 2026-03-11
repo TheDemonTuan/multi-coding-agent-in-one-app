@@ -25,7 +25,7 @@ const defaultSettings: TerminalSettings = {
   fontSize: 14,
   fontFamily: '"Cascadia Code", "Fira Code", Consolas, monospace',
   cursorBlink: true,
-  scrollback: 1000, // Optimal limit to prevent memory bloat (VAL-PERF-002)
+  scrollback: 300, // Updated for Option C: Balanced performance optimization
   showCommandBlocks: true,
   theme: 'dark',
 };
@@ -184,8 +184,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
               {/* Scrollback */}
               <div style={styles.section}>
                 <label style={styles.label}>Scrollback Buffer (lines)</label>
-                <input type="number" min={100} max={10000} step={100} value={settings.scrollback} onChange={(e) => setSettings({...settings, scrollback: parseInt(e.target.value) || 1000})} style={styles.input} />
-                <p style={{fontSize: '11px', color: '#6c7086', marginTop: '4px'}}>Recommended: 1000-5000 lines to prevent memory bloat</p>
+                <input type="number" min={100} max={10000} step={100} value={settings.scrollback} onChange={(e) => setSettings({...settings, scrollback: parseInt(e.target.value) || 300})} style={styles.input} />
+                <p style={{fontSize: '11px', color: '#6c7086', marginTop: '4px'}}>Recommended: 300-500 lines for optimal performance (Option C: Balanced)</p>
               </div>
 
               {/* Show Command Blocks */}

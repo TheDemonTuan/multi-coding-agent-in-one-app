@@ -22,7 +22,7 @@ const DEFAULT_SETTINGS: TerminalSettings = {
   fontSize: 14,
   fontFamily: '"Cascadia Code", "Fira Code", Consolas, monospace',
   cursorBlink: true,
-  scrollback: 1000,
+  scrollback: 300, // Updated for Option C: Balanced performance optimization
   showCommandBlocks: true,
   theme: 'dark',
 };

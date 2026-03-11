@@ -226,9 +226,15 @@ func (v *VietnameseIMEService) FindClaudePath() string {
 		}
 	}
 
-	// Priority 6: Official Claude Code installer paths
+	// Priority 6: Official CLAUDE Code installer paths (WinGet/PowerShell)
 	if isWin {
+		// Official WinGet/PowerShell installer paths (PRIMARY - with space in "Claude Code")
 		officialPaths := []string{
+			// WinGet/PowerShell installer paths (RECOMMENDED - check first)
+			filepath.Join(os.Getenv("LOCALAPPDATA"), "Programs", "Claude Code", "claude.exe"),
+			filepath.Join(os.Getenv("PROGRAMFILES"), "Claude Code", "claude.exe"),
+			filepath.Join(os.Getenv("USERPROFILE"), "AppData", "Local", "Programs", "Claude Code", "claude.exe"),
+			// Legacy paths (keep for backward compatibility with older installs)
 			filepath.Join(os.Getenv("LOCALAPPDATA"), "Programs", "Claude", "claude.exe"),
 			filepath.Join(os.Getenv("LOCALAPPDATA"), "Claude", "claude.exe"),
 			filepath.Join(os.Getenv("PROGRAMFILES"), "Claude", "claude.exe"),
@@ -243,11 +249,12 @@ func (v *VietnameseIMEService) FindClaudePath() string {
 		}
 	}
 
-	// Not found - provide helpful message
+	// Not found - provide helpful message with current installation methods
 	fmt.Printf("[VietnameseIME] Claude Code not found in PATH or common locations.\n")
-	fmt.Printf("[VietnameseIME] Please ensure Claude Code is installed:\n")
-	fmt.Printf("[VietnameseIME]   bun install -g @anthropic-ai/claude-code\n")
-	fmt.Printf("[VietnameseIME]   npm install -g @anthropic-ai/claude-code\n")
+	fmt.Printf("[VietnameseIME] Please install Claude Code using one of these methods:\n")
+	fmt.Printf("[VietnameseIME]   (RECOMMENDED) PowerShell: irm https://claude.ai/install.ps1 | iex\n")
+	fmt.Printf("[VietnameseIME]   (RECOMMENDED) WinGet:     winget install Anthropic.ClaudeCode\n")
+	fmt.Printf("[VietnameseIME]   (ALTERNATIVE) bun:        bun install -g @anthropic-ai/claude-code\n")
 
 	return ""
 }
