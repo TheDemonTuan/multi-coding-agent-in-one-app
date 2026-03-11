@@ -177,11 +177,12 @@ type RestoreResult struct {
 
 // PatchStatus represents the current patch status.
 type PatchStatus struct {
-	IsPatched    bool   `json:"isPatched"`
-	ClaudePath   string `json:"claudePath"`
-	HasBackup    bool   `json:"hasBackup"`
-	InstalledVia string `json:"installedVia"` // "bun" | "npm" | "pnpm" | "binary" | "unknown"
-	Version      string `json:"version,omitempty"`
+	IsPatched           bool   `json:"isPatched"`
+	ClaudePath          string `json:"claudePath"`
+	HasBackup           bool   `json:"hasBackup"`
+	InstalledVia        string `json:"installedVia"` // "bun" | "npm" | "pnpm" | "binary" | "unknown"
+	Version             string `json:"version,omitempty"`
+	ClaudeCodeInstalled bool   `json:"claudeCodeInstalled"`
 }
 
 // IMESettings stores Vietnamese IME settings.

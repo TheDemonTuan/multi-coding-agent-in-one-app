@@ -136,6 +136,8 @@ export const TerminalCell = React.memo<TerminalCellProps>(({
     customKeyHandlerCleanup?: () => void;
   }>({});
 
+
+
   const [hasStarted, setHasStarted] = useState(false);
 
   const [unreadCount, setUnreadCount] = useState(0);
@@ -391,6 +393,69 @@ export const TerminalCell = React.memo<TerminalCellProps>(({
     searchAddonRef.current.findPrevious('');
   }, []);
 
+  // Spawn terminal with dimensions - called after initial fit completes
+  const spawnTerminalWithDimensions = useCallback((terminalId: string, cols: number, rows: number) => {
+    const workspaceId = currentWorkspace?.id;
+
+    // Timeout for terminal-started event
+    const startTimeout = setTimeout(() => {
+      if (!hasStarted) {
+        updateTerminalStatus(terminalId, 'error');
+        const timeoutMsg = `Terminal ${terminal.agent?.type || 'process'} failed to start within 5 seconds`;
+        setSpawnError(timeoutMsg);
+        if (terminalRef.current) {
+          terminalRef.current.write(`\r\n\x1b[31m❌ ${timeoutMsg}\x1b[0m\r\n`);
+        }
+        const timer = setTimeout(() => setSpawnError(null), 10000);
+        errorToastTimersRef.current.push(timer);
+      }
+    }, 5000);
+
+    const spawnPromise = terminal.agent?.enabled && terminal.agent.type !== 'none'
+      ? backendAPI.spawnTerminalWithAgent(terminalId, terminal.cwd, terminal.agent, workspaceId, cols, rows)
+      : backendAPI.spawnTerminal(terminalId, terminal.cwd, workspaceId, cols, rows);
+    spawnPromise
+      .then((result: any) => {
+        clearTimeout(startTimeout);
+
+        if (result?.pid) {
+          setTerminalProcessId(terminalId, result.pid);
+
+          setTimeout(() => {
+            if (terminal.status === 'stopped') {
+              backendAPI.getTerminalStatus(terminalId).then((status) => {
+                if (status.exists && status.status === 'running') {
+                  updateTerminalStatus(terminalId, 'running');
+                  setHasStarted(true);
+                }
+              });
+            }
+          }, 1000);
+
+        } else if (result?.success === false && result?.error) {
+          setSpawnError(result.error);
+          updateTerminalStatus(terminalId, 'error');
+          if (terminalRef.current) {
+            terminalRef.current.write(`\r\n\x1b[31m❌ ${result.error}\x1b[0m\r\n`);
+          }
+          const timer = setTimeout(() => setSpawnError(null), 10000);
+          errorToastTimersRef.current.push(timer);
+        }
+      })
+      .catch((err: any) => {
+        clearTimeout(startTimeout);
+
+        updateTerminalStatus(terminalId, 'error');
+        const errorMsg = err?.message || String(err);
+        setSpawnError(errorMsg);
+        if (terminalRef.current) {
+          terminalRef.current.write(`\r\n\x1b[31m❌ Failed to start terminal: ${errorMsg}\x1b[0m\r\n`);
+        }
+        const timer = setTimeout(() => setSpawnError(null), 10000);
+        errorToastTimersRef.current.push(timer);
+      });
+  }, [currentWorkspace?.id, terminal.agent, terminal.cwd, terminal.status, hasStarted]);
+
   // Initialize terminal - runs ONCE per terminal instance
   useEffect(() => {
     if (!containerRef.current) return;
@@ -411,7 +476,10 @@ export const TerminalCell = React.memo<TerminalCellProps>(({
       fontFamily: '"Cascadia Code", "Fira Code", Consolas, "Courier New", monospace',
       allowProposedApi: true,
       // Configure scrollback buffer to prevent memory bloat (VAL-PERF-002)
-      scrollback: 1000, // Limit to 1000 lines for optimal memory usage
+      scrollback: 500, // Reduced from 1000 to 500 lines for optimal memory usage
+
+      // Theme applied immediately to prevent white text on first load
+      theme: theme === 'dark' ? DARK_THEME : LIGHT_THEME,
 
       // Performance optimizations (VAL-PERF-008)
       drawBoldTextInBrightColors: true,
@@ -436,14 +504,12 @@ export const TerminalCell = React.memo<TerminalCellProps>(({
     term.loadAddon(webLinksAddon);
     term.loadAddon(searchAddon);
     term.open(containerRef.current);
-
-    // Try to enable GPU-accelerated WebGL rendering (up to ~900% faster than Canvas).
-    // Falls back gracefully to Canvas 2D renderer if WebGL is unavailable
-    // (e.g., headless environments, GPU virtualization, or driver issues).
-    // Note: On Windows with ConPTY, WebGL can sometimes cause text scrambling,
-    // so we only enable it on non-Windows platforms.
-    const isWindows = navigator.platform.toLowerCase().includes('win');
-    if (!isWindows) {
+    
+    // Lazy load WebGL addon only when terminal becomes active to reduce startup memory
+    // WebGL can use 50-100MB per instance for texture atlas and shaders
+    // Initial load deferred until terminal is activated by user
+    const shouldLoadWebGL = isActive;
+    if (shouldLoadWebGL) {
       try {
         const webglAddon = new WebglAddon();
         webglAddon.onContextLoss(() => {
@@ -453,6 +519,7 @@ export const TerminalCell = React.memo<TerminalCellProps>(({
         term.loadAddon(webglAddon);
         webglAddonRef.current = webglAddon;
       } catch (err) {
+        // WebGL not available, fallback to Canvas renderer
       }
     }
 
@@ -464,16 +531,18 @@ export const TerminalCell = React.memo<TerminalCellProps>(({
         const rect = containerRef.current?.getBoundingClientRect();
         if (rect && rect.width > 0 && rect.height > 0) {
           fitAddon.fit();
-          // Update PTY with initial size
+          // Capture dimensions AFTER fit and BEFORE spawn
           const { cols, rows } = term;
           lastDimensionsRef.current = { cols, rows };
-          backendAPI.terminalResize(terminal.id, cols, rows);
 
           // Mark initial fit as complete and flush buffered data
           isInitialFitCompleteRef.current = true;
           dataBufferRef.current.forEach(data => term.write(data));
           dataBufferRef.current = [];
           hasInitiallyFitRef.current = true;
+
+          // Now spawn terminal with dimensions
+          spawnTerminalWithDimensions(terminal.id, cols, rows);
         }
       });
     });
@@ -488,8 +557,6 @@ export const TerminalCell = React.memo<TerminalCellProps>(({
     commandBlockTrackerRef.current = new CommandBlockTracker(
       () => terminalRef.current?.buffer.active.baseY ?? 0
     );
-
-    term.options.theme = theme === 'dark' ? DARK_THEME : LIGHT_THEME;
 
     // Store initial dimensions so ResizeObserver won't fire a resize on first observation
     lastDimensionsRef.current = { cols: term.cols, rows: term.rows };
@@ -533,27 +600,21 @@ export const TerminalCell = React.memo<TerminalCellProps>(({
     // Setup event listeners (VAL-MEM-003)
 
     listenersRef.current.unsubscribeData = backendAPI.onTerminalData((event: { terminalId: string; data: string }) => {
-      console.log('[TerminalCell] Received terminal-data event:', event.terminalId, 'length:', event.data?.length);
       if (event.terminalId === terminal.id && terminalRef.current) {
-        // Debug logging
-        console.log('[TerminalCell] Processing data for', event.terminalId, 'length:', event.data.length, 'fitComplete:', isInitialFitCompleteRef.current);
-        
-        // Fast-path: only invoke OSC 133 parser if escape sequence is present.
-        // The regex scan avoids garbage on every keystroke in terminals that
-        // don't emit shell-integration markers (the common case).
-        const hasOSC = event.data.includes('\x1b]133;');
         let outputData = event.data;
+        
+        // Parse OSC 133 shell integration markers if present
+        const hasOSC = outputData.includes('\x1b]133;');
         if (hasOSC) {
-          const { cleaned, markers } = parseOSC133(event.data);
+          const { cleaned, markers } = parseOSC133(outputData);
           if (markers.length > 0) {
             commandBlockTrackerRef.current?.processMarkers(markers);
             outputData = cleaned;
           }
         }
 
-        // Buffer data until initial fit is complete to prevent garbled output
+        // Buffer data until initial fit is complete
         if (!isInitialFitCompleteRef.current) {
-          console.log('[TerminalCell] Buffering data, buffer size:', dataBufferRef.current.length);
           dataBufferRef.current.push(outputData);
           return;
         }
@@ -567,23 +628,10 @@ export const TerminalCell = React.memo<TerminalCellProps>(({
     });
 
     listenersRef.current.unsubscribeStarted = backendAPI.onTerminalStarted((event: { terminalId: string; pid?: number }) => {
-      console.log('[TerminalCell] Received terminal-started event:', event.terminalId);
       if (event.terminalId === terminal.id) {
-        console.log('[TerminalCell] Processing terminal-started for:', event.terminalId);
         updateTerminalStatus(terminal.id, 'running');
         setHasStarted(true);
         terminalRef.current?.focus();
-
-        // Re-sync terminal dimensions with PTY after (re)start
-        // New PTY starts with default cols/rows, but xterm may already be sized differently
-        if (terminalRef.current && fitAddonRef.current) {
-          try {
-            fitAddonRef.current.fit();
-            const { cols, rows } = terminalRef.current;
-            backendAPI.terminalResize(terminal.id, cols, rows);
-          } catch (err) {
-          }
-        }
       }
     });
 
@@ -606,9 +654,7 @@ export const TerminalCell = React.memo<TerminalCellProps>(({
 
 
     listenersRef.current.unsubscribeError = backendAPI.onTerminalError((event: { terminalId: string; error: string }) => {
-      console.log('[TerminalCell] Received terminal-error event:', event.terminalId, event.error);
       if (event.terminalId === terminal.id) {
-        console.log('[TerminalCell] Processing error for terminal:', event.terminalId);
         terminalRef.current?.write(`\r\n\x1b[31m❌ Error: ${event.error}\x1b[0m\r\n`);
         updateTerminalStatus(terminal.id, 'error');
         setSpawnError(event.error);
@@ -717,80 +763,6 @@ export const TerminalCell = React.memo<TerminalCellProps>(({
     xtermDisposablesRef.current.customKeyHandlerCleanup = () => {
       customKeyHandlerRegistered = false;
     };
-
-
-    // Spawn terminal process
-    const workspaceId = currentWorkspace?.id;
-
-    // Timeout for terminal-started event (Change 3 from plan)
-    const startTimeout = setTimeout(() => {
-      // Only trigger timeout if terminal hasn't started yet
-      if (!hasStarted) {
-        updateTerminalStatus(terminal.id, 'error');
-        const timeoutMsg = `Terminal ${terminal.agent?.type || 'process'} failed to start within 5 seconds`;
-        setSpawnError(timeoutMsg);
-        term.write(`\r\n\x1b[31m❌ ${timeoutMsg}\x1b[0m\r\n`);
-        const timer = setTimeout(() => setSpawnError(null), 10000);
-        errorToastTimersRef.current.push(timer);
-      }
-    }, 5000);
-
-    const spawnPromise = terminal.agent?.enabled && terminal.agent.type !== 'none'
-      ? backendAPI.spawnTerminalWithAgent(terminal.id, terminal.cwd, terminal.agent, workspaceId)
-      : backendAPI.spawnTerminal(terminal.id, terminal.cwd, workspaceId);
-
-    console.log('[TerminalCell] Spawn promise started for:', terminal.id, terminal.agent?.type);
-    console.log('[TerminalCell] BackendAPI available:', isWailsAvailable());
-    spawnPromise
-      .then((result: any) => {
-        console.log('[TerminalCell] Spawn promise resolved for:', terminal.id, result);
-        // Clear timeout on spawn response
-        clearTimeout(startTimeout);
-
-        if (result?.pid) {
-          console.log('[TerminalCell] Spawn succeeded with PID:', result.pid);
-          setTerminalProcessId(terminal.id, result.pid);
-          // Note: Don't update status to 'running' here - wait for terminal-started event
-          // This ensures status is only updated when event is actually received
-          console.log('[TerminalCell] Waiting for terminal-started event to update status');
-
-          // Status reconciliation: query backend if we missed the terminal-started event
-          setTimeout(() => {
-            if (terminal.status === 'stopped') {
-              backendAPI.getTerminalStatus(terminal.id).then((status) => {
-                console.log('[TerminalCell] Status reconciliation:', terminal.id, status);
-                if (status.exists && status.status === 'running') {
-                  updateTerminalStatus(terminal.id, 'running');
-                  setHasStarted(true);
-                }
-              });
-            }
-          }, 1000); // Wait 1s for event, then reconcile
-
-        } else if (result?.success === false && result?.error) {
-          // Handle validation errors from main process
-          console.log('[TerminalCell] Spawn failed with error:', result.error);
-          setSpawnError(result.error);
-          updateTerminalStatus(terminal.id, 'error');
-          term.write(`\r\n\x1b[31m❌ ${result.error}\x1b[0m\r\n`);
-          const timer = setTimeout(() => setSpawnError(null), 10000);
-          errorToastTimersRef.current.push(timer);
-        } else {
-          console.log('[TerminalCell] Spawn resolved with unexpected result:', result);
-        }
-      })
-      .catch((err: any) => {
-        console.log('[TerminalCell] Spawn promise rejected for:', terminal.id, err);
-        // Clear timeout on spawn error
-        clearTimeout(startTimeout);
-        
-        updateTerminalStatus(terminal.id, 'error');
-        const errorMsg = err?.message || String(err);
-        setSpawnError(errorMsg);
-        term.write(`\r\n\x1b[31m❌ Failed to start terminal: ${errorMsg}\x1b[0m\r\n`);
-        const timer = setTimeout(() => setSpawnError(null), 10000);
-        errorToastTimersRef.current.push(timer);
-      });
 
     return () => {
 
@@ -943,28 +915,92 @@ export const TerminalCell = React.memo<TerminalCellProps>(({
     }
   }, [theme]);
 
+  // Lazy load WebGL addon when terminal becomes active
+  // This reduces startup memory by deferring WebGL initialization until user interacts with terminal
+  useEffect(() => {
+    if (isActive && terminalRef.current && !webglAddonRef.current) {
+      try {
+        const webglAddon = new WebglAddon();
+        webglAddon.onContextLoss(() => {
+          webglAddon.dispose();
+          webglAddonRef.current = null;
+        });
+        terminalRef.current.loadAddon(webglAddon);
+        webglAddonRef.current = webglAddon;
+      } catch (err) {
+        // WebGL not available or failed to load, fallback to Canvas renderer
+      }
+    }
+  }, [isActive, terminal.id]);
+
   // When becoming active: only focus the terminal, do NOT call fit().
+  // When becoming inactive: blur the terminal to hide cursor.
   // Border width is now constant (2px) so container size doesn't change on focus switch.
   useEffect(() => {
-    if (isActive && terminalRef.current) {
+    if (!terminalRef.current) return;
+
+    if (isActive) {
       terminalRef.current.scrollToBottom();
       terminalRef.current.focus();
+    } else {
+      // Blur when becoming inactive to hide cursor
+      terminalRef.current.blur();
     }
   }, [isActive, terminal.id]);
 
   // Re-fit terminal only when switching workspaces (not when switching terminals within same workspace)
   const lastWorkspaceIdRef = useRef<string | null>(currentWorkspace?.id ?? null);
+  const intersectionObserverRef = useRef<IntersectionObserver | null>(null);
+
+  // Debounced resize function to prevent flooding
+  const debouncedResize = useCallback(() => {
+    if (fitDebounceRef.current) {
+      clearTimeout(fitDebounceRef.current);
+    }
+
+    fitDebounceRef.current = setTimeout(() => {
+      if (terminalRef.current && fitAddonRef.current) {
+        fitAddonRef.current.fit();
+        const { cols, rows } = terminalRef.current;
+        backendAPI.terminalResize(terminal.id, cols, rows);
+      }
+    }, 300);
+  }, [terminal.id]);
+
+  // Set up IntersectionObserver to detect when container becomes visible
+  useEffect(() => {
+    if (!containerRef.current) return;
+
+    intersectionObserverRef.current = new IntersectionObserver((entries) => {
+      entries.forEach((entry) => {
+        if (entry.isIntersecting && terminalRef.current && fitAddonRef.current) {
+          // Container is now visible, trigger resize
+          debouncedResize();
+        }
+      });
+    });
+
+    intersectionObserverRef.current.observe(containerRef.current);
+
+    return () => {
+      if (intersectionObserverRef.current) {
+        intersectionObserverRef.current.disconnect();
+        intersectionObserverRef.current = null;
+      }
+    };
+  }, [terminal.id, debouncedResize]);
+
+  // Re-fit terminal when switching workspaces
   useEffect(() => {
     const newId = currentWorkspace?.id ?? null;
     if (newId !== lastWorkspaceIdRef.current) {
       lastWorkspaceIdRef.current = newId;
       if (terminalRef.current && fitAddonRef.current) {
-        setTimeout(() => {
-          fitAddonRef.current?.fit();
-        }, 50);
+        // Single debounced resize after workspace switch
+        debouncedResize();
       }
     }
-  }, [currentWorkspace?.id]);
+  }, [currentWorkspace?.id, terminal.id, debouncedResize]);
 
   const agentIcon = terminal.agent?.enabled && terminal.agent.type !== 'none'
     ? agentIcons[terminal.agent.type]

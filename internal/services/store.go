@@ -3,6 +3,8 @@ package services
 import (
 	"encoding/json"
 	"fmt"
+	"log"
+	"os"
 	"path/filepath"
 	"sync"
 
@@ -25,12 +27,26 @@ type StoreService struct {
 
 // NewStoreService creates and initializes the StoreService.
 func NewStoreService() *StoreService {
-	dbPath := filepath.Join(platform.GetConfigDir(), "data.db")
+	configDir := platform.GetConfigDir()
+	dbPath := filepath.Join(configDir, "data.db")
 
+	// Ensure config directory exists before opening database
+	if err := os.MkdirAll(configDir, 0755); err != nil {
+		log.Printf("[StoreService] WARNING: Failed to create config directory %s: %v", configDir, err)
+	}
+
+	// Attempt to open the database file
 	db, err := buntdb.Open(dbPath)
 	if err != nil {
+		// Log the error with full path for debugging
+		log.Printf("[StoreService] WARNING: Failed to open database file at %s: %v", dbPath, err)
+		log.Printf("[StoreService] Falling back to in-memory storage - data will NOT persist!")
+
 		// Fallback to in-memory if file fails
 		db, _ = buntdb.Open(":memory:")
+	} else {
+		// Successfully opened file-based database
+		log.Printf("[StoreService] Database initialized at %s", dbPath)
 	}
 
 	db.SetConfig(buntdb.Config{

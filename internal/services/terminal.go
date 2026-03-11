@@ -438,11 +438,9 @@ func (t *TerminalService) readPTYOutput(ctx context.Context, proc *ptyProcess) {
 		if n > 0 {
 			data := make([]byte, n)
 			copy(data, buf[:n])
-			log.Printf("[DEBUG] readPTYOutput for %s: read %d bytes", proc.id, n)
 			proc.batcher.write(data)
 		}
 		if err != nil {
-			log.Printf("[DEBUG] readPTYOutput for %s: err=%v", proc.id, err)
 			// PTY closed, process has exited - emit terminal-exit
 			t.mu.Lock()
 			delete(t.processes, proc.id)
@@ -486,13 +484,9 @@ func resolveCWD(cwd string) string {
 func buildEnv(terminalID string) []string {
 	env := os.Environ()
 
-	// Platform-specific TERM configuration
+	// Use xterm-256color on all platforms for better escape sequence support
+	// This is what Windows Terminal, VS Code terminal, and Warp all use
 	termVar := "TERM=xterm-256color"
-	if platform.IsWindows() {
-		// Use cygwin for better Windows ConPTY compatibility
-		// This helps prevent text scrambling and encoding issues
-		termVar = "TERM=cygwin"
-	}
 
 	env = append(env,
 		termVar,
@@ -500,7 +494,6 @@ func buildEnv(terminalID string) []string {
 		"TDT_TERMINAL_ID="+terminalID,
 		"LC_ALL=C.UTF-8",
 		"LANG=en_US.UTF-8",
-		"ConEmuANSI=ON", // Improves ConPTY compatibility
 	)
 	return filterEnv(env, "TERM_PROGRAM")
 }

@@ -548,13 +548,17 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => {
             terminalId,
             terminal.cwd,
             terminal.agent,
-            state.currentWorkspace.id
+            state.currentWorkspace.id,
+            0,
+            0
           );
         } else {
           result = await backendAPI.spawnTerminal(
             terminalId,
             terminal.cwd,
-            state.currentWorkspace.id
+            state.currentWorkspace.id,
+            0,
+            0
           );
         }
 
@@ -613,13 +617,17 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => {
             terminalId,
             terminal.cwd,
             agentConfig,
-            state.currentWorkspace.id
+            state.currentWorkspace.id,
+            0,
+            0
           );
         } else {
           result = await backendAPI.spawnTerminal(
             terminalId,
             terminal.cwd,
-            state.currentWorkspace.id
+            state.currentWorkspace.id,
+            0,
+            0
           );
         }
 

@@ -2,179 +2,202 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Commands
+## Tool Usage Guidelines
 
+### Serena MCP Tools (Preferred)
+
+When working with this codebase, **prioritize using Serena MCP tools** over standard file operations:
+
+- **Search/Navigation**: Use `serena:search_for_pattern` instead of grep
+- **Symbol Lookup**: Use `serena:find_symbol` to locate functions/classes
+- **Code Overview**: Use `serena:get_symbols_overview` to understand file structure
+- **References**: Use `serena:find_referencing_symbols` to find where symbols are used
+- **File Operations**: Use `serena:read_file`, `serena:replace_content`, `serena:replace_symbol_body`
+
+**Important**: When using Serena tools, you must specify the agent name with the tool prefix: `mcp__plugin_serena_serena__<tool_name>` (e.g., `mcp__plugin_serena_serena__find_symbol`).
+
+### LSP Tools (When Available)
+
+Use LSP tools for:
+- Code navigation and goto-definition
+- Refactoring operations
+- Type information and diagnostics
+- Auto-completion context
+
+### Fallback
+
+Only use standard tools (`Read`, `Edit`, `Grep`, `Glob`) when:
+- Serena MCP is not available
+- Performing simple file reads where symbol information isn't needed
+- Working with non-code files (config, documentation)
+
+## Project Overview
+
+**TDT Space** is a multi-agent terminal desktop application built with [Wails v2](https://wails.io/) (Go backend + React/TypeScript frontend). It allows users to run multiple AI coding agents (Claude Code, OpenCode, Droid, etc.) simultaneously in a grid-based terminal layout.
+
+## Tech Stack
+
+- **Backend**: Go 1.22+ with Wails v2
+- **Frontend**: React 19 + TypeScript 5.9 + Vite 7
+- **State Management**: Zustand
+- **Terminal**: xterm.js with node-pty (conpty on Windows)
+- **Storage**: Buntdb (embedded Go database via StoreService)
+- **Package Manager**: Bun
+
+## Build Commands
+
+Development:
 ```bash
-bun install              # Install dependencies
-bun run dev              # Start Vite dev server (React + Electron)
-bun run build            # Build React app and Electron main process
-bun run electron:start   # Run Electron app in development mode
-bun run electron:build   # Build and package production app
-bun run package          # Package app with ASAR bundling
+wails dev                    # Start development server (hot reload)
+bun run dev                  # Start frontend dev server only (port 34115)
+```
+
+Production Build:
+```bash
+wails build                  # Build for current platform
+wails build -clean -trimpath -upx  # Optimized build with UPX compression
+
+# Using helper scripts:
+build.bat dev                # Development mode (Windows)
+build.bat prod               # Production build (Windows) - default
+build.bat installer          # Build with NSIS installer
+build.bat all                # Build for all platforms (Win/Linux/macOS)
+build.bat debug              # Debug build with devtools
+
+./build.sh dev               # Same options for Linux/macOS (bash script)
+```
+
+Frontend-only:
+```bash
+bun install                  # Install dependencies
+bun run build                # Build frontend (outputs to frontend/dist)
+bun run preview              # Preview production build
 ```
 
 ## Architecture
 
-**TDT Space** is an Electron desktop application providing a grid-based terminal workspace for running multiple AI coding agents in parallel.
+### Backend (Go)
 
-### Tech Stack
-- **Framework**: Electron (main process) + React 19 (renderer)
-- **Build**: Vite with `vite-plugin-electron` and `vite-plugin-electron-renderer`
-- **State**: Zustand stores
-- **Terminal**: node-pty + xterm.js (+addons: fit, search, web-links, webgl)
-- **Storage**: electron-store (persistent settings)
-- **Package Manager**: Bun
-- **Language**: TypeScript (strict mode, path alias `@/` → `src/`)
+Located at project root and `internal/`:
 
-### Architectural Overview
+- **main.go**: Application entry point, initializes services, Wails configuration
+- **app.go**: Main App struct, service wiring, Wails lifecycle hooks (startup, shutdown)
+- **internal/services/**: Business logic layer
+  - `terminal.go`: PTY terminal management (spawn, kill, resize, I/O)
+  - `terminal_batching.go`: Output batching for performance
+  - `workspace.go`: Workspace CRUD operations
+  - `store.go`: Key-value persistence using Buntdb
+  - `system.go`: System dialogs, platform info, directory listing
+  - `ime.go`: Vietnamese IME patch for Claude Code
+  - `types.go`: Go type definitions
+- **internal/platform/**: Platform-specific code (Windows conpty, Unix PTY)
 
-The codebase follows a **modular, domain-based architecture** with clear separation of concerns:
-
-```
-src/
-├── electron/
-│   ├── main.ts              # Entry point, window creation, app lifecycle
-│   ├── preload.cjs          # Context bridge (contextIsolation: true)
-│   ├── terminal.ts          # PTY utilities
-│   └── ipc/                 # IPC handlers organized by domain
-│       ├── terminal.handlers.ts       # Spawn, write, kill, resize
-│       ├── workspace.handlers.ts      # CRUD, switch, patch validation
-│       ├── template.handlers.ts       # Template CRUD
-│       ├── store.handlers.ts          # electron-store access
-│       ├── window.handlers.ts         # Minimize, maximize, close
-│       ├── system.handlers.ts         # Platform, version, cwd
-│       ├── terminal-history.handlers.ts
-│       └── vietnamese-ime.handlers.ts # IME patch management
-├── components/              # React UI (domain-organized)
-│   ├── agents/              # AgentAllocationSlider, AgentInstallGuide, etc.
-│   ├── modals/              # SettingsModal, CustomTemplateModal, etc.
-│   ├── terminals/           # TerminalCell, TerminalGrid, TerminalSearch, etc.
-│   ├── workspaces/          # WorkspaceTabBar, LayoutSelector, etc.
-│   ├── ui/                  # TitleBar, ScrollToBottomButton
-│   └── index.ts             # Barrel exports
-├── config/                  # Centralized configuration
-│   ├── agents.ts            # Agent command configs (claude, opencode, droid)
-│   ├── templates.ts         # Default layout templates
-│   ├── constants.ts         # IPC channels, shortcuts, storage keys
-│   └── index.ts
-├── hooks/                   # Custom React hooks
-│   ├── useTerminal.ts       # Terminal lifecycle, xterm.js setup
-│   ├── useTerminalSearch.ts # Search addon integration
-│   ├── useWorkspaceNavigation.ts  # Workspace cycling helpers
-│   ├── useCommandHistory.ts
-│   └── index.ts
-├── lib/                     # Low-level utilities
-│   ├── logger.ts            # Centralized logging (debug/info/warn/error)
-│   ├── debounce.ts          # Debounce helper
-│   ├── platform.ts          # Platform detection
-│   └── index.ts
-├── services/                # Business logic layer (renderer-side)
-│   ├── terminal.service.ts  # TerminalService singleton (spawn, write, kill)
-│   └── workspace.service.ts
-├── stores/                  # Zustand state management
-│   ├── workspaceStore.ts    # Workspace CRUD, terminals, agent assignments
-│   ├── templateStore.ts     # Layout template management
-│   ├── settingsStore.ts     # App settings (theme, terminal options)
-│   └── terminalHistoryStore.ts
-├── types/                   # TypeScript definitions (domain-specific)
-│   ├── agent.ts             # AgentConfig, AgentType, AgentSpawnOptions
-│   ├── ipc.ts               # IPC request/response types
-│   ├── terminal.ts          # TerminalPane, TerminalStatus
-│   ├── workspace.ts         # WorkspaceState, WorkspaceLayout
-│   ├── workspace.agents.ts  # Agent-related workspace types
-│   └── electron.d.ts        # Electron API type declarations
-└── utils/                   # Helper utilities
-    ├── storage.ts           # electron-store wrappers
-    ├── shortcuts.ts         # Keyboard shortcut utilities
-    ├── version.ts           # App version helper
-    └── vietnameseImePatch.ts # Vietnamese IME patch for Claude Code
+Services are instantiated in `main.go` with dependency injection pattern:
+```go
+storeSvc := services.NewStoreService()
+terminalSvc := services.NewTerminalService()
+workspaceSvc := services.NewWorkspaceService()
+workspaceSvc.Init(storeSvc, terminalSvc)  // Wire dependencies
 ```
 
-### Key Architectural Patterns
+Services exposed to frontend via Wails binding in `main.go`:
+```go
+Bind: []interface{}{
+    app, terminalSvc, workspaceSvc, storeSvc, ...
+}
+```
 
-**1. Domain-Based Organization**
-- Components organized by feature domain (agents, terminals, workspaces, modals)
-- Type definitions mirror domain structure
-- IPC handlers separated by domain concern
+### Frontend (React/TypeScript)
 
-**2. Service Layer Pattern**
-- `TerminalService` singleton encapsulates terminal operations
-- Business logic separated from UI components
-- Service methods handle electronAPI communication
+Located in `src/`:
 
-**3. Centralized Configuration**
-- All constants in `config/constants.ts` (IPC channels, shortcuts, storage keys)
-- Agent commands configured in `config/agents.ts`
-- Layout templates in `config/templates.ts`
+- **src/App.tsx**: Main application component
+- **src/components/**: UI components organized by domain:
+  - `agents/`: Agent selection and configuration
+  - `terminals/`: TerminalCell, xterm.js integration
+  - `workspaces/`: Workspace tabs, creation modal
+  - `modals/`: Dialog components
+  - `ui/`: Generic UI components
+- **src/services/**:
+  - `wails-bridge.ts`: Backend API interface (generated by Wails)
+  - `terminal.service.ts`, `workspace.service.ts`: Frontend service layer
+- **src/stores/**: Zustand stores (workspaceStore, settingsStore, etc.)
+- **src/types/**: TypeScript type definitions
+- **src/config/**: Agent configurations, layout templates
+- **src/hooks/**: Custom React hooks
 
-**4. Centralized Logging**
-- `Logger` class with levels (debug, info, warn, error)
-- Child loggers with prefix chaining (e.g., `[Main]`, `[IPC:Terminal]`)
-- Timestamp-based logging for debugging
+Key pattern: Frontend services call backend via `window.go.*` (Wails runtime), stores manage UI state.
 
-**5. Type-Safe IPC**
-- All IPC channels defined as constants
-- Request/response types in `types/ipc.ts`
-- Context isolation enabled for security
+### Communication
 
-### Terminal Lifecycle
+Frontend ↔ Backend via Wails bindings:
+- Direct method calls: `window.go.main.App.SpawnTerminal(...)`
+- Events: `runtime.EventsEmit(ctx, "terminal:data", payload)` / `runtime.EventsOn(ctx, "terminal:data", handler)`
 
-**Spawn Flow**:
-1. Renderer: `TerminalService.spawnTerminal()` or `spawnTerminalWithAgent()`
-2. IPC: `spawn-terminal` or `spawn-terminal-with-agent` handler
-3. Main: `pty.spawn()` with PowerShell (Win) or bash (Unix)
-4. Data: `ptyProcess.onData()` → `terminal-data` IPC event → xterm.js
+## Project Structure
 
-**Cleanup Flow**:
-1. Workspace switch or app quit triggers cleanup
-2. `cleanupAllTerminals()` kills all PTY processes
-3. Windows: `taskkill /f /t` for process tree killing
-4. Unix: `ptyProcess.kill()`
+```
+tdt-space/
+├── app.go                      # Main App struct, Wails lifecycle
+├── main.go                     # Entry point, service initialization
+├── wails.json                  # Wails configuration
+├── vite.config.ts              # Vite config (outputs to frontend/dist)
+├── package.json                # Frontend dependencies (Bun)
+├── go.mod                      # Go dependencies
+├── internal/
+│   ├── platform/               # Platform-specific PTY implementations
+│   └── services/               # Business logic services
+├── src/                        # Frontend React/TypeScript
+│   ├── components/             # React components (by domain)
+│   ├── services/               # Frontend service layer
+│   ├── stores/                 # Zustand state management
+│   ├── types/                  # TypeScript types
+│   ├── config/                 # Agent configs, templates
+│   └── hooks/                  # React hooks
+└── frontend/
+    └── dist/                   # Built frontend (embedded in Go binary)
+```
 
-**Agent Integration**:
-- Supported agents: `claude-code`, `opencode`, `droid`, `gemini-cli`, `aider`, etc.
-- Agent commands configured per-terminal in workspace state
-- Auto-patch system for Vietnamese IME support in Claude Code
+## Important Implementation Details
 
-### State Management
+### Terminal Management
 
-**Zustand Stores**:
-- `workspaceStore`: Active workspace, terminal list, agent assignments, theme
-- `templateStore`: User-saved layout templates
-- `settingsStore`: Terminal preferences (font, colors, scrollback)
-- `terminalHistoryStore`: Command history per terminal
+- Each terminal has a unique ID, PTY process, and xterm.js instance
+- Windows uses `conpty` (via `github.com/UserExistsError/conpty`)
+- Output is batched for performance (`terminal_batching.go`)
+- Cleanup is critical: PTY processes must be killed with full process tree on Windows (`taskkill /f /t`)
 
-**Persistence**:
-- All stores synced to electron-store with debounced saves (300ms)
-- Workspace changes trigger immediate save for critical operations (delete)
+### Vietnamese IME Support
 
-### Keyboard Shortcuts
+- `ime.go` patches Claude Code's readline module to support Vietnamese input
+- Patches are applied automatically on first run with version tracking
+- Located in user's home directory under `.claude/vietnamese-ime/`
 
-| Shortcut | Action |
-|----------|--------|
-| `Ctrl+Shift+N` | Create new workspace |
-| `Ctrl+Tab` | Cycle to next workspace (modal preview) |
-| `Ctrl+Shift+Tab` | Cycle to previous workspace |
-| `Ctrl+PageUp` | Previous workspace |
-| `Ctrl+PageDown` | Next workspace |
-| `Ctrl+T` | Next terminal (or `Ctrl+1-9` for specific) |
-| `Ctrl+Shift+T` | Previous terminal |
-| `Alt+1-9` | Switch to workspace by index |
-| `Ctrl+,` | Open Settings |
+### Window Frame
 
-### Build Configuration
+- Windows uses frameless mode with custom title bar (see `TitleBar` component)
+- macOS/Linux use native window decorations (`Frameless: false`)
 
-**vite.config.ts**:
-- Custom plugin copies `preload.cjs` directly (bypasses Vite transform)
-- Electron main process: CJS format, outputs to `dist-electron/main/`
-- React renderer: ESM, outputs to `dist/`
+## Development Workflow
 
-**package.js**:
-- ASAR bundling for production
-- Unpacks `node-pty` and `@xterm` (native modules)
-- Outputs to `release/win-unpacked-<timestamp>/`
+1. Install dependencies: `bun install`
+2. Run `wails dev` for full-stack development with hot reload
+3. Frontend changes are reflected immediately via Vite HMR
+4. Backend changes require Wails restart
+5. Build production with `build.bat prod` (Windows) or `./build.sh prod` (Unix)
 
-### Platform Notes
-- Windows-only (Shell: PowerShell with `-NoLogo -NoExit`)
-- GPU features disabled for compatibility
-- Vietnamese IME patch system for Claude Code CLI
+## Common Tasks
+
+Adding a new agent type:
+1. Add to `src/config/agents.ts` in `AGENT_CONFIGS`
+2. Agent icon mapping in terminal components
+
+Adding a new IPC method:
+1. Add method to service in `internal/services/*.go`
+2. Expose in `app.go` (wrapper) or add service to `Bind` in `main.go`
+3. Regenerate Wails bindings (happens automatically on `wails dev`)
+4. Call from frontend via `window.go.main.App.MethodName()`
+
+Platform-specific code:
+- Use build tags in `internal/platform/` (e.g., `//go:build windows`)
+- Current implementation supports Windows (conpty) and Unix (pty)

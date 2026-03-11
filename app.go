@@ -121,10 +121,12 @@ func (a *App) WindowIsMaximized() bool {
 // ============================================================================
 
 // SpawnTerminal spawns a new terminal.
-func (a *App) SpawnTerminal(id string, cwd string, workspaceId string) map[string]interface{} {
+func (a *App) SpawnTerminal(id string, cwd string, workspaceId string, cols int, rows int) map[string]interface{} {
 	result := a.terminalSvc.SpawnTerminal(services.SpawnTerminalOptions{
-		ID:  id,
-		CWD: cwd,
+		ID:   id,
+		CWD:  cwd,
+		Cols: cols,
+		Rows: rows,
 	})
 	return map[string]interface{}{
 		"success": result.Success,
@@ -134,12 +136,14 @@ func (a *App) SpawnTerminal(id string, cwd string, workspaceId string) map[strin
 }
 
 // SpawnTerminalWithAgent spawns a new terminal with an AI agent.
-func (a *App) SpawnTerminalWithAgent(id string, cwd string, agentType string, workspaceId string) map[string]interface{} {
-	fmt.Printf("[DEBUG] SpawnTerminalWithAgent: id=%s, agentType=%s, cwd=%s, workspaceId=%s\n", id, agentType, cwd, workspaceId)
+func (a *App) SpawnTerminalWithAgent(id string, cwd string, agentType string, workspaceId string, cols int, rows int) map[string]interface{} {
+	fmt.Printf("[DEBUG] SpawnTerminalWithAgent: id=%s, agentType=%s, cwd=%s, workspaceId=%s, cols=%d, rows=%d\n", id, agentType, cwd, workspaceId, cols, rows)
 	result := a.terminalSvc.SpawnTerminalWithAgent(services.SpawnAgentOptions{
 		ID:        id,
 		CWD:       cwd,
 		AgentType: agentType,
+		Cols:      cols,
+		Rows:      rows,
 	})
 	fmt.Printf("[DEBUG] SpawnTerminalWithAgent result: success=%v, pid=%d, error=%s\n", result.Success, result.PID, result.Error)
 

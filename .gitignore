@@ -18,6 +18,7 @@ vite.config.d.ts
 *.so
 *.dylib
 /build/
+/build_release/
 /build/bin/
 /build/windows/
 /build/darwin/

@@ -82,10 +82,11 @@ wails dev
 goto :end
 
 :prod
-echo [^>] Building for current platform...
-echo     Flags: -clean %OBFUSCATE_FLAG% -trimpath %UPX_FLAG%
+echo [^>] Building for current platform with memory optimizations...
+echo     Flags: -clean %OBFUSCATE_FLAG% -trimpath %UPX_FLAG% -ldflags="-s -w"
 echo.
-wails build -clean %OBFUSCATE_FLAG% -trimpath %UPX_FLAG%
+REM -ldflags="-s -w" strips debug symbols to reduce binary size and memory footprint
+wails build -clean %OBFUSCATE_FLAG% -trimpath %UPX_FLAG% -ldflags="-s -w"
 echo.
 echo [✓] Build complete!
 dir /b build\bin\

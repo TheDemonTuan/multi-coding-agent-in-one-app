@@ -19,9 +19,9 @@ import (
 
 const (
 	batchFlushInterval  = 16 * time.Millisecond // ~60fps
-	batchMaxSize        = 8192                  // bytes - increased for better throughput
-	maxBufferedDataSize = 1024 * 1024           // 1MB max buffered data
-	minFlushInterval    = 5 * time.Millisecond  // minimum time between flushes to prevent overwhelming xterm.js
+	batchMaxSize        = 8192                  // bytes - increased for better batching
+	maxBufferedDataSize = 512 * 1024            // 512KB max buffered data
+	minFlushInterval    = 8 * time.Millisecond  // minimum time between flushes
 )
 
 // terminalBatcher batches PTY output for a single terminal.
@@ -108,13 +108,12 @@ func (b *terminalBatcher) flushLocked() {
 			log.Printf("[WARN] Terminal %s: max buffer size exceeded, dropping data", b.terminalID)
 		}
 		b.buf = b.buf[:0]
-		log.Printf("[DEBUG] terminalBatcher %s: context nil, buffering %d bytes", b.terminalID, len(b.buf))
+		log.Printf("[DEBUG] terminalBatcher %s: context nil, buffered data", b.terminalID)
 		return
 	}
 
 	// Flush buffered data first
 	if len(b.bufferedData) > 0 {
-		log.Printf("[DEBUG] terminalBatcher %s: flushing %d buffered events", b.terminalID, len(b.bufferedData))
 		for _, data := range b.bufferedData {
 			runtime.EventsEmit(ctx, "terminal-data", map[string]interface{}{
 				"terminalId": b.terminalID,
@@ -132,6 +131,7 @@ func (b *terminalBatcher) flushLocked() {
 		copy(payload, b.buf)
 		b.buf = b.buf[:0]
 
+		// Always stop timer before clearing to prevent stale callbacks
 		if b.timer != nil {
 			b.timer.Stop()
 			b.timer = nil
@@ -140,7 +140,6 @@ func (b *terminalBatcher) flushLocked() {
 		// Update last flush time
 		b.lastFlushTime = time.Now()
 
-		log.Printf("[DEBUG] terminalBatcher %s: emitting terminal-data with %d bytes", b.terminalID, len(payload))
 		// Emit event to frontend — data is converted to string to prevent base64 encoding
 		runtime.EventsEmit(ctx, "terminal-data", map[string]interface{}{
 			"terminalId": b.terminalID,

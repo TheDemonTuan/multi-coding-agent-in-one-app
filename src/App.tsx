@@ -3,6 +3,7 @@ import { TitleBar, TerminalGrid, WorkspaceTabBar, WorkspaceSwitcherModal, Settin
 import { useWorkspaceStore, initializePlatformInfo } from './stores';
 import { getAppVersion } from './utils/version';
 import { useWorkspaceNavigation } from './hooks';
+import { MemoryMonitor } from './lib/memoryMonitor';
 
 function App() {
   // Use workspace navigation hook
@@ -43,6 +44,30 @@ function App() {
   // Load workspaces from store on mount (only once)
   useEffect(() => {
     loadWorkspaces();
+  }, []);
+
+  // Enable memory monitoring in production to track startup memory spike
+  useEffect(() => {
+    // Start memory monitoring with 10-second interval
+    MemoryMonitor.startMonitoring(10000);
+    
+    // Log initial memory stats after 5 seconds
+    const initialStatsTimeout = setTimeout(() => {
+      const stats = MemoryMonitor.getStats();
+      if (stats) {
+        console.log('[App] Initial memory stats:', {
+          usedMB: (stats.usedJSHeapSize / 1024 / 1024).toFixed(2),
+          totalMB: (stats.totalJSHeapSize / 1024 / 1024).toFixed(2),
+          limitMB: (stats.jsHeapSizeLimit / 1024 / 1024).toFixed(2),
+          usagePercent: ((stats.usedJSHeapSize / stats.jsHeapSizeLimit) * 100).toFixed(2) + '%',
+        });
+      }
+    }, 5000);
+
+    return () => {
+      MemoryMonitor.stopMonitoring();
+      clearTimeout(initialStatsTimeout);
+    };
   }, []);
 
   // Listen for workspace switcher open event from TerminalCell

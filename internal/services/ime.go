@@ -283,7 +283,13 @@ func (v *VietnameseIMEService) GetCurrentClaudeVersion() string {
 func (v *VietnameseIMEService) GetPatchStatus() PatchStatus {
 	claudePath := v.FindClaudePath()
 	if claudePath == "" {
-		return PatchStatus{IsPatched: false, ClaudePath: "", HasBackup: false, InstalledVia: "unknown"}
+		return PatchStatus{
+			IsPatched:           false,
+			ClaudePath:          "",
+			HasBackup:           false,
+			InstalledVia:        "unknown",
+			ClaudeCodeInstalled: false,
+		}
 	}
 
 	isPatched := false
@@ -308,11 +314,12 @@ func (v *VietnameseIMEService) GetPatchStatus() PatchStatus {
 	}
 
 	return PatchStatus{
-		IsPatched:    isPatched,
-		ClaudePath:   claudePath,
-		HasBackup:    hasBackup,
-		InstalledVia: installedVia,
-		Version:      version,
+		IsPatched:           isPatched,
+		ClaudePath:          claudePath,
+		HasBackup:           hasBackup,
+		InstalledVia:        installedVia,
+		Version:             version,
+		ClaudeCodeInstalled: true,
 	}
 }
 

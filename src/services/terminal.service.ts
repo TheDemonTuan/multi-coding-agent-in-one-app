@@ -35,7 +35,8 @@ class TerminalServiceClass {
     this.log.info('Spawning terminal', { id, cwd, workspaceId });
 
     try {
-      const result = await backendAPI.spawnTerminal(id, cwd, workspaceId);
+      // Pass 0 for cols/rows - backend will use defaults (80x24) via clampSize
+      const result = await backendAPI.spawnTerminal(id, cwd, workspaceId || '', 0, 0);
 
       if (result.success) {
         this.updateTerminalStatus(id, 'running');
@@ -63,7 +64,8 @@ class TerminalServiceClass {
     this.log.info('Spawning terminal with agent', { id, cwd, agentConfig, workspaceId });
 
     try {
-      const result = await backendAPI.spawnTerminalWithAgent(id, cwd, agentConfig, workspaceId);
+      // Pass 0 for cols/rows - backend will use defaults (80x24) via clampSize
+      const result = await backendAPI.spawnTerminalWithAgent(id, cwd, agentConfig, workspaceId || '', 0, 0);
 
       if (result.success) {
         this.updateTerminalStatus(id, 'running');

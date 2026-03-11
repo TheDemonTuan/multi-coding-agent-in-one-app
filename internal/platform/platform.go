@@ -4,6 +4,7 @@ package platform
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -84,7 +85,9 @@ func GetConfigDir() string {
 	}
 
 	dir := filepath.Join(base, "tdt-space")
-	_ = os.MkdirAll(dir, 0755)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		log.Printf("[Platform] WARNING: Failed to create config directory %s: %v", dir, err)
+	}
 	return dir
 }
 

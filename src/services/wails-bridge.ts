@@ -6,7 +6,7 @@
  *
  * Wails auto-generates TypeScript bindings from Go exported methods.
  * They are available at: window.go.<PackageName>.<StructName>.<MethodName>()
- * For services in 'services' package: window.go.main.services.<ServiceName>.<MethodName>()
+ * For services in 'services' package: window.go.services.<ServiceName>.<MethodName>()
  *
  * Event system uses: window.runtime.EventsOn / EventsOff / EventsEmit
  */
@@ -35,11 +35,27 @@ declare global {
   interface Window {
     // Wails Go bindings (auto-generated)
     go?: {
+      // Services bound via Wails (window.go.services.<ServiceName>)
+      services?: {
+        WorkspaceService?: {
+          GetWorkspaces(): Promise<any[]>;
+          CreateWorkspace(workspace: any): Promise<any>;
+          UpdateWorkspace(workspace: any): Promise<any>;
+          DeleteWorkspace(id: string): Promise<BackendResult>;
+          GetWorkspace(id: string): Promise<any>;
+          PatchWorkspace(id: string, patch: Record<string, any>): Promise<any>;
+        };
+        TemplateService?: {
+          GetTemplates(): Promise<any[]>;
+          SaveTemplate(template: any): Promise<any>;
+          DeleteTemplate(id: string): Promise<BackendResult>;
+        };
+      };
       main?: {
         App: {
           // Terminal methods
-          SpawnTerminal(id: string, cwd: string, workspaceId: string): Promise<{ success: boolean; pid?: number; error?: string }>;
-          SpawnTerminalWithAgent(id: string, cwd: string, agentType: string, workspaceId: string): Promise<{ success: boolean; pid?: number; error?: string }>;
+          SpawnTerminal(id: string, cwd: string, workspaceId: string, cols: number, rows: number): Promise<{ success: boolean; pid?: number; error?: string }>;
+          SpawnTerminalWithAgent(id: string, cwd: string, agentType: string, workspaceId: string, cols: number, rows: number): Promise<{ success: boolean; pid?: number; error?: string }>;
           WriteToTerminal(id: string, data: string): Promise<{ success: boolean; error?: string }>;
           KillTerminal(id: string): Promise<{ success: boolean; error?: string }>;
           ResizeTerminal(id: string, cols: number, rows: number): Promise<{ success: boolean; error?: string }>;
@@ -67,22 +83,6 @@ declare global {
           RestoreVietnameseImePatch(): Promise<BackendRestoreResult>;
           ValidateVietnameseImePatch(): Promise<BackendPatchValidation>;
         };
-        // Services bound via Wails (window.go.main.<package>.<ServiceName>)
-        services?: {
-          WorkspaceService?: {
-            GetWorkspaces(): Promise<any[]>;
-            CreateWorkspace(workspace: any): Promise<any>;
-            UpdateWorkspace(workspace: any): Promise<any>;
-            DeleteWorkspace(id: string): Promise<BackendResult>;
-            GetWorkspace(id: string): Promise<any>;
-            PatchWorkspace(id: string, patch: Record<string, any>): Promise<any>;
-          };
-          TemplateService?: {
-            GetTemplates(): Promise<any[]>;
-            SaveTemplate(template: any): Promise<any>;
-            DeleteTemplate(id: string): Promise<BackendResult>;
-          };
-        };
       };
     };
 
@@ -104,7 +104,7 @@ declare global {
 export function isWailsAvailable(): boolean {
   return (
     typeof window !== 'undefined' &&
-    !!(window.go?.main?.App || window.go?.main?.services?.WorkspaceService)
+    !!(window.go?.main?.App || window.go?.services?.WorkspaceService)
   );
 }
 
@@ -155,8 +155,8 @@ export interface BackendAPI {
   deleteTemplate(id: string): Promise<{ success: boolean; error?: string }>;
 
   // Terminal management
-  spawnTerminal(id: string, cwd: string, workspaceId?: string): Promise<{ success: boolean; pid?: number; error?: string }>;
-  spawnTerminalWithAgent(id: string, cwd: string, agentConfig: AgentConfig, workspaceId?: string): Promise<{ success: boolean; pid?: number; error?: string }>;
+  spawnTerminal(id: string, cwd: string, workspaceId: string, cols: number, rows: number): Promise<{ success: boolean; pid?: number; error?: string }>;
+  spawnTerminalWithAgent(id: string, cwd: string, agentConfig: AgentConfig, workspaceId: string, cols: number, rows: number): Promise<{ success: boolean; pid?: number; error?: string }>;
   terminalWrite(id: string, data: string): Promise<{ success: boolean; error?: string }>;
   terminalKill(id: string): Promise<{ success: boolean; error?: string }>;
   terminalResize(id: string, cols: number, rows: number): Promise<{ success: boolean }>;
@@ -188,8 +188,8 @@ export interface BackendAPI {
 
 function createWailsBridge(): BackendAPI {
   const app = () => window.go?.main?.App;
-  const workspaceService = () => window.go?.main?.services?.WorkspaceService;
-  const templateService = () => window.go?.main?.services?.TemplateService;
+  const workspaceService = () => window.go?.services?.WorkspaceService;
+  const templateService = () => window.go?.services?.TemplateService;
   const runtime = () => window.runtime;
 
   const onEvent = (eventName: string, callback: (...args: any[]) => void): (() => void) => {
@@ -390,10 +390,10 @@ function createWailsBridge(): BackendAPI {
     saveTemplate:   (t)    => safeCall(() => templateService()?.SaveTemplate(t) ?? Promise.resolve({ success: false, error: 'TemplateService unavailable' }), { success: false, error: 'TemplateService failed' }),
     deleteTemplate: (id)   => safeCall(() => templateService()?.DeleteTemplate(id) ?? Promise.resolve({ success: false, error: 'TemplateService unavailable' }), { success: false, error: 'TemplateService failed' }),
 
-    spawnTerminal: (id, cwd, workspaceId = '') =>
-      safeCall(() => app()!.SpawnTerminal(id, cwd, workspaceId), { success: false, error: 'TerminalService unavailable' }),
-    spawnTerminalWithAgent: (id, cwd, agentConfig, workspaceId = '') =>
-      safeCall(() => app()!.SpawnTerminalWithAgent(id, cwd, agentConfig.type, workspaceId), { success: false, error: 'TerminalService unavailable' }),
+    spawnTerminal: (id, cwd, workspaceId, cols, rows) =>
+      safeCall(() => app()!.SpawnTerminal(id, cwd, workspaceId, cols, rows), { success: false, error: 'TerminalService unavailable' }),
+    spawnTerminalWithAgent: (id, cwd, agentConfig, workspaceId, cols, rows) =>
+      safeCall(() => app()!.SpawnTerminalWithAgent(id, cwd, agentConfig.type, workspaceId, cols, rows), { success: false, error: 'TerminalService unavailable' }),
     terminalWrite:  (id, data)           => safeCall(() => app()!.WriteToTerminal(id, data), { success: false, error: 'TerminalService unavailable' }),
     terminalKill:   (id)                 => safeCall(() => app()!.KillTerminal(id), { success: false, error: 'TerminalService unavailable' }),
     terminalResize: (id, cols, rows)     => safeCall(() => app()!.ResizeTerminal(id, cols, rows), { success: false }),

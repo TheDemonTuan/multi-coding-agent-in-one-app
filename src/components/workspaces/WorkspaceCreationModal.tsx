@@ -201,7 +201,19 @@ export const WorkspaceCreationModal: React.FC<WorkspaceCreationModalProps> = ({
         title: 'Select Working Directory',
       });
       if (!result.canceled && result.filePaths.length > 0) {
-        setWorkingDir(result.filePaths[0]);
+        const selectedPath = result.filePaths[0];
+
+        // Validate the path exists by trying to list it
+        const validation = await backendAPI.listDirectory(selectedPath);
+        if (validation.error) {
+          console.warn('[WorkspaceCreationModal] Selected path may not be accessible:', validation.error);
+          // Still set the path - user can verify it works when creating workspace
+        }
+
+        setWorkingDir(selectedPath);
+        setCommandInput(''); // Clear command input since we have a valid path
+        setShowSuggestions(false);
+        setSuggestions([]);
       }
     } catch {
       const folder = prompt('Enter working directory path:', workingDir);
@@ -307,6 +319,16 @@ export const WorkspaceCreationModal: React.FC<WorkspaceCreationModalProps> = ({
         setShowSuggestions(false);
         setSuggestions([]);
       }
+    } else if (e.key === 'ArrowUp' && showSuggestions) {
+      e.preventDefault();
+      setSelectedSuggestionIndex(prev =>
+        prev > 0 ? prev - 1 : suggestions.length - 1
+      );
+    } else if (e.key === 'ArrowDown' && showSuggestions) {
+      e.preventDefault();
+      setSelectedSuggestionIndex(prev =>
+        prev < suggestions.length - 1 ? prev + 1 : 0
+      );
     } else if (e.key === 'ArrowUp') {
       e.preventDefault();
       if (commandHistory.length > 0) {
@@ -314,7 +336,7 @@ export const WorkspaceCreationModal: React.FC<WorkspaceCreationModalProps> = ({
         setHistoryIndex(newIndex);
         setCommandInput(commandHistory[commandHistory.length - 1 - newIndex] || '');
       }
-      setShowSuggestions(false);
+      // Don't close suggestions if they're showing - user was navigating suggestions
     } else if (e.key === 'ArrowDown') {
       e.preventDefault();
       if (historyIndex > 0) {
@@ -325,17 +347,7 @@ export const WorkspaceCreationModal: React.FC<WorkspaceCreationModalProps> = ({
         setHistoryIndex(-1);
         setCommandInput('');
       }
-      setShowSuggestions(false);
-    } else if (e.key === 'ArrowUp' && showSuggestions) {
-      e.preventDefault();
-      setSelectedSuggestionIndex(prev => 
-        prev > 0 ? prev - 1 : suggestions.length - 1
-      );
-    } else if (e.key === 'ArrowDown' && showSuggestions) {
-      e.preventDefault();
-      setSelectedSuggestionIndex(prev => 
-        prev < suggestions.length - 1 ? prev + 1 : 0
-      );
+      // Don't close suggestions if they're showing
     } else if (e.key === 'Escape') {
       setShowSuggestions(false);
       setSuggestions([]);
@@ -374,23 +386,38 @@ export const WorkspaceCreationModal: React.FC<WorkspaceCreationModalProps> = ({
   const getDirectoryPaths = async (partial: string): Promise<string[]> => {
     try {
       // Determine the directory to list based on the partial path
-      let targetPath = partial;
+      let targetPath: string;
+      let filterName: string;
 
       // Handle special paths
       if (partial === '~' || partial.startsWith('~/')) {
         targetPath = partial;
-      } else if (partial === '.' || partial.startsWith('./')) {
+        filterName = partial.substring(2); // Remove ~/ for filtering
+      } else if (partial === '.' || partial === './') {
         targetPath = '.';
-      } else if (partial === '..' || partial.startsWith('../')) {
+        filterName = '';
+      } else if (partial.startsWith('./')) {
+        targetPath = '.';
+        filterName = partial.substring(2); // Remove ./ for filtering
+      } else if (partial === '..' || partial === '../') {
         targetPath = '..';
+        filterName = '.';
+      } else if (partial.startsWith('../')) {
+        targetPath = '..';
+        filterName = partial.substring(3); // Remove ../ for filtering
       } else if (!partial.includes('/') && !partial.includes('\\')) {
-        // Just a name, search in current directory
+        // Just a name without path separators - search in current working directory
         targetPath = workingDir || '.';
+        filterName = partial;
       } else {
-        // Extract directory from partial path
+        // Path with separators - extract directory and filename
         const lastSepIndex = Math.max(partial.lastIndexOf('/'), partial.lastIndexOf('\\'));
-        if (lastSepIndex > 0) {
-          targetPath = partial.substring(0, lastSepIndex);
+        if (lastSepIndex >= 0) {
+          targetPath = partial.substring(0, lastSepIndex) || '.';
+          filterName = partial.substring(lastSepIndex + 1);
+        } else {
+          targetPath = '.';
+          filterName = partial;
         }
       }
 
@@ -403,16 +430,22 @@ export const WorkspaceCreationModal: React.FC<WorkspaceCreationModalProps> = ({
       }
 
       // Filter to show only directories
-      const directories = result.entries
+      let directories = result.entries
         .filter((entry: DirectoryEntry) => entry.isDirectory)
         .map((entry: DirectoryEntry) => entry.name);
 
-      // If user is typing a partial path, filter results
+      // Filter by the name being typed (if any)
+      if (filterName) {
+        directories = directories.filter((name: string) =>
+          name.toLowerCase().includes(filterName.toLowerCase())
+        );
+      }
+
+      // Add prefix back if path has separators
       const lastSlashIndex = Math.max(partial.lastIndexOf('/'), partial.lastIndexOf('\\'));
       const prefix = lastSlashIndex >= 0 ? partial.substring(0, lastSlashIndex + 1) : '';
 
       return directories
-        .filter((name: string) => name.toLowerCase().includes(partial.toLowerCase()) || prefix)
         .map((name: string) => prefix + name)
         .slice(0, 8);
     } catch (err) {
@@ -528,44 +561,59 @@ export const WorkspaceCreationModal: React.FC<WorkspaceCreationModalProps> = ({
 
       setCurrentWorkspace(workspace);
 
-      // Auto-spawn all terminals after a short delay
+      // Auto-spawn all terminals with staggered delays to reduce memory spike
+      // Spawn terminals one by one with 150ms delay between each to prevent memory alloc burst
       if (spawnTimeoutRef.current) clearTimeout(spawnTimeoutRef.current);
       spawnTimeoutRef.current = setTimeout(async () => {
         try {
-          const spawnResults = [];
-          for (let i = 0; i < workspace.terminals.length; i++) {
-            const terminal = workspace.terminals[i];
-            const agentKey = `term-${i}`;
-            const agentConfig = finalAgentAssignments[agentKey];
+          const spawnTerminalsSequentially = async () => {
+            const spawnResults = [];
+            for (let i = 0; i < workspace.terminals.length; i++) {
+              const terminal = workspace.terminals[i];
+              const agentKey = `term-${i}`;
+              const agentConfig = finalAgentAssignments[agentKey];
 
-            let result;
-            if (agentConfig && agentConfig.enabled && agentConfig.type !== 'none') {
-              result = await backendAPI.spawnTerminalWithAgent(
-                terminal.id,
-                workingDir,
-                agentConfig,
-                workspace.id
-              );
-            } else {
-              result = await backendAPI.spawnTerminal(
-                terminal.id,
-                workingDir,
-                workspace.id
-              );
+              let result;
+              if (agentConfig && agentConfig.enabled && agentConfig.type !== 'none') {
+                result = await backendAPI.spawnTerminalWithAgent(
+                  terminal.id,
+                  workingDir,
+                  agentConfig,
+                  workspace.id,
+                  0,
+                  0
+                );
+              } else {
+                result = await backendAPI.spawnTerminal(
+                  terminal.id,
+                  workingDir,
+                  workspace.id,
+                  0,
+                  0
+                );
+              }
+
+              if (!result.success) {
+                spawnResults.push({ terminal: terminal.id, success: false, error: result.error });
+              }
+
+              // Stagger terminal spawn by 150ms to reduce memory spike
+              // This prevents all terminals from allocating memory simultaneously
+              if (i < workspace.terminals.length - 1) {
+                await new Promise(resolve => setTimeout(resolve, 150));
+              }
             }
 
-            if (!result.success) {
-              spawnResults.push({ terminal: terminal.id, success: false, error: result.error });
+            // Show error if any terminals failed
+            const failedTerminals = spawnResults.filter(r => !r.success);
+            if (failedTerminals.length > 0) {
+              console.error('[WorkspaceCreationModal] Failed to spawn terminals:', failedTerminals);
+              const errorMsg = failedTerminals[0].error || 'Không thể khởi tạo terminal';
+              alert(`⚠️ Lỗi khi tạo workspace:\n\n${errorMsg}\n\nVui lòng kiểm tra thư mục làm việc và thử lại.`);
             }
-          }
+          };
 
-          // Show error if any terminals failed
-          const failedTerminals = spawnResults.filter(r => !r.success);
-          if (failedTerminals.length > 0) {
-            console.error('[WorkspaceCreationModal] Failed to spawn terminals:', failedTerminals);
-            const errorMsg = failedTerminals[0].error || 'Không thể khởi tạo terminal';
-            alert(`⚠️ Lỗi khi tạo workspace:\n\n${errorMsg}\n\nVui lòng kiểm tra thư mục làm việc và thử lại.`);
-          }
+          await spawnTerminalsSequentially();
         } catch (err: any) {
           console.error('[WorkspaceCreationModal] Failed to spawn terminals:', err);
           alert(`⚠️ Lỗi khi tạo workspace:\n\n${err.message || 'Lỗi không xác định'}\n\nVui lòng thử lại.`);
