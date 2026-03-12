@@ -61,22 +61,25 @@ func (a *App) ServiceStartup(ctx context.Context, options application.ServiceOpt
 // ServiceShutdown is called when the app shuts down.
 // This is a Wails v3 Service lifecycle method.
 func (a *App) ServiceShutdown() error {
-	// 1. Cleanup all terminals first to prevent orphaned processes
-	if a.terminalSvc != nil {
-		a.terminalSvc.CleanupAllTerminals()
-	}
+	log.Printf("[INFO] ServiceShutdown: starting store close")
 
-	// 2. Then close the store to ensure all data is persisted
+	// Close the store to ensure all data is persisted
 	if a.storeSvc != nil {
 		a.storeSvc.Close()
+		log.Printf("[INFO] ServiceShutdown: store closed")
 	}
 
+	log.Printf("[INFO] ServiceShutdown: complete")
 	return nil
 }
 
 // OnBeforeClose is called before the window is closed, returning true will prevent close.
 func (a *App) OnBeforeClose() bool {
-	// Cleanup is handled by ServiceShutdown
+	// Cleanup terminals early, before Wails runtime starts shutting down
+	// This prevents blocking and event emission during shutdown
+	if a.terminalSvc != nil {
+		a.terminalSvc.CleanupAllTerminals()
+	}
 	return false
 }
 

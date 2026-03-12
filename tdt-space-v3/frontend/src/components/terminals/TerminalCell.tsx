@@ -1014,6 +1014,20 @@ export const TerminalCell = React.memo<TerminalCellProps>(({
       }
     }, [isActive, terminal.id]);
 
+  // Spawn terminal when workspace becomes active and terminal hasn't started yet
+  // This handles cases where:
+  // 1. Workspace is loaded on app startup and becomes active
+  // 2. User switches between cached workspaces (TerminalGrid keeps them mounted)
+  useEffect(() => {
+    if (isActive &&
+        terminal.agent?.enabled &&
+        terminal.agent.type !== 'none' &&
+        !hasStarted &&
+        hasInitiallyFitRef.current) {
+      spawnTerminalWithDimensions(terminal.id, lastDimensionsRef.current?.cols || 80, lastDimensionsRef.current?.rows || 24);
+    }
+  }, [isActive, terminal.agent?.enabled, terminal.agent?.type, hasStarted, spawnTerminalWithDimensions]);
+
   // When becoming active: only focus the terminal, do NOT call fit().
   // When becoming inactive: blur the terminal to hide cursor.
   // Border width is now constant (2px) so container size doesn't change on focus switch.

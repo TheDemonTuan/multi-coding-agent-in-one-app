@@ -118,6 +118,30 @@ echo   - Frontend: http://localhost:9245
 echo   - Hot reload: Enabled
 echo   - Debug symbols: Included
 echo.
+REM Build frontend dist first if it doesn't exist (required for embed directive)
+if not exist "frontend\dist" (
+    echo %INFO% Frontend dist not found. Building for the first time...
+    echo.
+    cd frontend
+    call bun install
+    if %ERRORLEVEL% NEQ 0 (
+        echo.
+        echo %RED% Failed to install frontend dependencies!
+        cd ..
+        exit /b 1
+    )
+    call bun run build:dev
+    if %ERRORLEVEL% NEQ 0 (
+        echo.
+        echo %RED% Failed to build frontend!
+        cd ..
+        exit /b 1
+    )
+    cd ..
+    echo.
+    echo %GREEN% Frontend build complete!
+    echo.
+)
 call wails3 dev -config ./build/config.yml
 goto :end
 

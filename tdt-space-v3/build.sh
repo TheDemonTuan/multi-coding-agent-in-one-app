@@ -113,6 +113,28 @@ case "$CMD" in
         echo "  - Hot reload: Enabled"
         echo "  - Debug symbols: Included"
         echo ""
+        # Build frontend dist first if it doesn't exist (required for embed directive)
+        if [ ! -d "frontend/dist" ]; then
+            echo -e "${BLUE}[i]${NC} Frontend dist not found. Building for the first time..."
+            echo ""
+            cd frontend
+            bun install || {
+                echo ""
+                echo -e "${RED}[X]${NC} Failed to install frontend dependencies!"
+                cd ..
+                exit 1
+            }
+            bun run build:dev || {
+                echo ""
+                echo -e "${RED}[X]${NC} Failed to build frontend!"
+                cd ..
+                exit 1
+            }
+            cd ..
+            echo ""
+            echo -e "${GREEN}[✓]${NC} Frontend build complete!"
+            echo ""
+        fi
         wails3 dev -config ./build/config.yml
         ;;
 

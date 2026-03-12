@@ -355,6 +355,8 @@ func (t *TerminalService) CleanupAllTerminals() CleanupResult {
 	}
 	t.mu.Unlock()
 
+	log.Printf("[INFO] CleanupAllTerminals: starting cleanup for %d terminals", len(ids))
+
 	// Kill all processes concurrently with overall timeout
 	var wg sync.WaitGroup
 	for _, id := range ids {
@@ -373,6 +375,7 @@ func (t *TerminalService) CleanupAllTerminals() CleanupResult {
 	}()
 	select {
 	case <-done:
+		log.Printf("[INFO] CleanupAllTerminals: all terminals cleaned up")
 	case <-time.After(5 * time.Second):
 		log.Printf("[WARN] CleanupAllTerminals timed out after 5s")
 	}
@@ -439,7 +442,18 @@ func (t *TerminalService) killProcess(id string) error {
 	}
 
 	proc.cancelFunc()
-	proc.pty.Close()
+
+	// Close PTY with timeout to prevent blocking during shutdown
+	closeDone := make(chan struct{})
+	go func() {
+		proc.pty.Close()
+		close(closeDone)
+	}()
+	select {
+	case <-closeDone:
+	case <-time.After(2 * time.Second):
+		log.Printf("[WARN] PTY.Close() timed out for terminal %s", id)
+	}
 
 	// Skip KillProcessTree during shutdown - ConPTY Close() handles it
 	if !shuttingDown {
