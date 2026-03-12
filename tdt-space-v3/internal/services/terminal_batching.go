@@ -19,12 +19,12 @@ import (
 // ============================================================================
 
 const (
-	batchFlushInterval  = 12 * time.Millisecond // ~83fps - reduced from 16ms for Option C: Balanced
-	batchMaxSize        = 16384                 // bytes - increased from 8192 for better batching (Option C)
+	batchFlushInterval  = 16 * time.Millisecond // ~60fps - optimized for scroll stability
+	batchMaxSize        = 8192                  // bytes - smaller chunks for more frequent flushes
 	maxBufferedDataSize = 512 * 1024            // 512KB max buffered data
-	minFlushInterval    = 8 * time.Millisecond  // minimum time between flushes
+	minFlushInterval    = 16 * time.Millisecond // minimum time between flushes - prevents overlap
 
-	// Background workspace optimization (Option C: Hybrid)
+	// Background workspace optimization
 	backgroundBufferMaxSize = 256 * 1024       // 256KB max for background terminals
 	backgroundBufferTTL     = 30 * time.Second // TTL for background buffered data
 )

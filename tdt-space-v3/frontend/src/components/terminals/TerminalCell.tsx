@@ -151,12 +151,15 @@ export const TerminalCell = React.memo<TerminalCellProps>(({
     customKeyHandlerCleanup?: () => void;
   }>({});
 
-  // FPS capping for terminal writes (Option C: Balanced)
-  // Limit to max 30 writes/sec to prevent overwhelming xterm.js during data floods
-  const MAX_WRITES_PER_SECOND = 30;
+  // FPS capping for terminal writes - Optimized for scroll stability
+  // Limit to max 60 writes/sec for smoother output while preventing overwhelm
+  const MAX_WRITES_PER_SECOND = 60;
   const pendingWriteBufferRef = useRef<string[]>([]);
   const lastWriteTimeRef = useRef<number>(0);
   const writeTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const writeInProgressRef = useRef<boolean>(false);
+  const userScrolledUpRef = useRef<boolean>(false);
+  const lastScrollYRef = useRef<number>(0);
 
 
 
@@ -327,20 +330,36 @@ export const TerminalCell = React.memo<TerminalCellProps>(({
     }
   }, []);
 
-  const handleScroll = useCallback(() => {
-    if (terminalRef.current) {
-      const buffer = terminalRef.current.buffer.active;
-      // Fix: Correct scroll position formula
-      // viewportY = current scroll position (0 = top)
-      // baseY = total scrollable lines
-      // rows = visible lines
-      // isAtBottom when viewportY >= baseY - rows
-      const isAtBottom = buffer.viewportY >= buffer.baseY - terminalRef.current.rows;
+  // Debounced scroll handler to prevent excessive re-renders
+  const scrollDebounceRef = useRef<NodeJS.Timeout | null>(null);
 
+  const handleScroll = useCallback(() => {
+    if (!terminalRef.current) return;
+
+    const buffer = terminalRef.current.buffer.active;
+    const viewportY = buffer.viewportY;
+    const baseY = buffer.baseY;
+    const rows = terminalRef.current.rows;
+
+    // Update user scroll state - only true if scrolled up significantly (more than 3 lines)
+    const scrollThreshold = 3;
+    const isScrolledUp = viewportY < baseY - rows - scrollThreshold;
+    userScrolledUpRef.current = isScrolledUp;
+    lastScrollYRef.current = viewportY;
+
+    // Check if at bottom
+    const isAtBottom = viewportY >= baseY - rows;
+
+    // Debounce unread count updates
+    if (scrollDebounceRef.current) {
+      clearTimeout(scrollDebounceRef.current);
+    }
+
+    scrollDebounceRef.current = setTimeout(() => {
       if (isAtBottom) {
         setUnreadCount(0);
       }
-    }
+    }, 100);
   }, []);
 
   const lastDimensionsRef = useRef<{ cols: number; rows: number } | null>(null);
@@ -518,8 +537,8 @@ export const TerminalCell = React.memo<TerminalCellProps>(({
       fontSize: 14,
       fontFamily: '"Cascadia Code", "Fira Code", Consolas, "Courier New", monospace',
       allowProposedApi: true,
-      // Configure scrollback buffer to prevent memory bloat (VAL-PERF-002)
-      scrollback: 300, // Balanced: reduced from 500 to 300 lines for optimal memory/performance
+      // Configure scrollback buffer - reduced for better scroll performance
+      scrollback: 100, // Reduced from 300 to prevent scroll jitter and memory bloat
 
       // Theme applied immediately to prevent white text on first load
       theme: theme === 'dark' ? DARK_THEME : LIGHT_THEME,
@@ -528,18 +547,19 @@ export const TerminalCell = React.memo<TerminalCellProps>(({
       drawBoldTextInBrightColors: false, // Disable to reduce rendering overhead
       minimumContrastRatio: 1, // Skip contrast recalculation for performance
 
-      // Smooth scrolling improvements - disabled for instant scroll response (Option C)
-      fastScrollSensitivity: 10, // Increased from 5 for faster scroll
-      smoothScrollDuration: 0, // Disabled for instant scroll response (was 125ms)
+      // Smooth scrolling - completely disabled to prevent jitter
+      fastScrollSensitivity: 20, // Higher sensitivity for responsive scroll
+      smoothScrollDuration: 0, // Must be 0 to disable smooth scroll animation
 
       // Windows/ConPTY specific fixes to prevent text duplication/scrambling
-      // macOptionIsMeta: false prevents double character input on some systems
       macOptionIsMeta: false,
       // Better handling of wide characters (CJK, emoji)
       allowTransparency: false,
-      
+
       // Additional performance optimizations
       convertEol: true, // Reduce parsing overhead
+      cursorStyle: 'block', // Consistent cursor style
+      letterSpacing: 0, // Prevent text measurement issues
     });
 
     const fitAddon = new FitAddon();
@@ -645,58 +665,81 @@ export const TerminalCell = React.memo<TerminalCellProps>(({
 
     // Setup event listeners (VAL-MEM-003)
 
-    // Helper function: rate-limited terminal write with FPS capping (Option C)
-    // Fix 4: Smart auto-scroll - preserves scroll position when user is scrolled up
+    // Optimized rate-limited terminal write with scroll stability fixes
     const writeWithRateLimit = (data: string) => {
-      if (!terminalRef.current) return;
+      if (!terminalRef.current || writeInProgressRef.current) return;
 
       const now = Date.now();
-
-      // Check scroll position BEFORE writing to determine if we should preserve position
-      const buffer = terminalRef.current.buffer.active;
-      const userHasScrolledUp = buffer.viewportY > 0 && buffer.viewportY < buffer.baseY - terminalRef.current.rows;
 
       // Clean up old timestamps (older than 1 second)
       writeTimestampsRef.current = writeTimestampsRef.current.filter(ts => now - ts < 1000);
 
       // Check if we're over the rate limit
       if (writeTimestampsRef.current.length >= MAX_WRITES_PER_SECOND) {
-        // Buffer the data and schedule for later
+        // Buffer the data for batch processing
         pendingWriteBufferRef.current.push(data);
 
-        // Schedule drain if not already scheduled
+        // Schedule drain if not already scheduled - use shorter delay for responsiveness
         if (!writeTimeoutRef.current) {
-          const oldestTimestamp = writeTimestampsRef.current[0];
-          const delay = Math.max(1000 - (now - oldestTimestamp), 16);
           writeTimeoutRef.current = setTimeout(() => {
+            if (!terminalRef.current) return;
+
             writeTimeoutRef.current = null;
-            // Drain pending buffer
+            writeInProgressRef.current = true;
+
+            // Batch all pending data into single write
             const buffered = pendingWriteBufferRef.current.join('');
             pendingWriteBufferRef.current = [];
-            if (buffered && terminalRef.current) {
-              // Preserve scroll position if user was scrolled up
-              const buf = terminalRef.current.buffer.active;
-              const wasScrolledUp = buf.viewportY > 0 && buf.viewportY < buf.baseY - terminalRef.current.rows;
+
+            if (buffered) {
+              // Remember if user was scrolled up BEFORE writing
+              const wasScrolledUp = userScrolledUpRef.current;
+              const savedScrollY = lastScrollYRef.current;
+
               terminalRef.current.write(buffered);
-              if (wasScrolledUp) {
-                // Restore scroll position after write
-                terminalRef.current.scrollToLine(buf.viewportY);
+
+              // Restore scroll position if user was reading history
+              // Use scrollRows with 0 to stay at current position instead of scrollToLine
+              if (wasScrolledUp && savedScrollY > 0) {
+                // Small delay to let xterm.js finish internal scroll
+                requestAnimationFrame(() => {
+                  if (terminalRef.current) {
+                    terminalRef.current.scrollToLine(savedScrollY);
+                  }
+                  writeInProgressRef.current = false;
+                });
+              } else {
+                writeInProgressRef.current = false;
               }
+            } else {
+              writeInProgressRef.current = false;
             }
-          }, delay);
+          }, 16); // ~60fps timing
         }
         return;
       }
 
       // Record this write timestamp
       writeTimestampsRef.current.push(now);
+      writeInProgressRef.current = true;
+
+      // Remember scroll state before write
+      const wasScrolledUp = userScrolledUpRef.current;
+      const savedScrollY = lastScrollYRef.current;
+
+      // Single write operation
       terminalRef.current.write(data);
 
-      // Fix: If user was scrolled up, preserve their scroll position
-      // xterm.js auto-scrolls to bottom on write - we undo that if user was reading history
-      if (userHasScrolledUp) {
-        // Restore scroll position to where user was (don't force to bottom)
-        terminalRef.current.scrollToLine(buffer.viewportY);
+      // Restore scroll position if needed - use requestAnimationFrame for smoothness
+      if (wasScrolledUp && savedScrollY > 0) {
+        requestAnimationFrame(() => {
+          if (terminalRef.current) {
+            terminalRef.current.scrollToLine(savedScrollY);
+          }
+          writeInProgressRef.current = false;
+        });
+      } else {
+        writeInProgressRef.current = false;
       }
     };
 
@@ -891,13 +934,18 @@ export const TerminalCell = React.memo<TerminalCellProps>(({
         fitDebounceRef.current = null;
       }
 
-      // Clear write timeout and pending buffer (Option C)
+      // Clear write timeout and pending buffer
       if (writeTimeoutRef.current) {
         clearTimeout(writeTimeoutRef.current);
         writeTimeoutRef.current = null;
       }
+      if (scrollDebounceRef.current) {
+        clearTimeout(scrollDebounceRef.current);
+        scrollDebounceRef.current = null;
+      }
       pendingWriteBufferRef.current = [];
       writeTimestampsRef.current = [];
+      writeInProgressRef.current = false;
 
       // Disconnect ResizeObserver to prevent layout observation after unmount
       if (resizeObserverRef.current) {
