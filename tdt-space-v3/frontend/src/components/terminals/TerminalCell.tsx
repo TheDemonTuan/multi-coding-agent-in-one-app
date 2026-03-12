@@ -13,6 +13,7 @@ import { ScrollToBottomButton } from '../ui/ScrollToBottomButton';
 import { TerminalSearch } from './TerminalSearch';
 import { parseOSC133, CommandBlockTracker } from '../../lib/osc133Parser';
 import { backendAPI, isWailsAvailable } from '../../services/wails-bridge';
+import { debounce } from '../../lib/debounce';
 
 // Theme constants - VS Code / xterm.js recommended dark terminal colors
 const DARK_THEME = {
@@ -124,7 +125,6 @@ export const TerminalCell = React.memo<TerminalCellProps>(({
 
   // Performance tracking for conditional WebGL (Option C: Balanced)
   const totalDataReceivedRef = useRef<number>(0);
-  const writeTimestampsRef = useRef<number[]>([]);
   const webglLoadAttemptedRef = useRef<boolean>(false);
 
   // Actions — stable references in Zustand, destructuring is fine here
@@ -154,12 +154,17 @@ export const TerminalCell = React.memo<TerminalCellProps>(({
   // FPS capping for terminal writes - Optimized for scroll stability
   // Limit to max 60 writes/sec for smoother output while preventing overwhelm
   const MAX_WRITES_PER_SECOND = 60;
+  const MAX_PENDING_BUFFER_CHARS = 50000; // ~50KB max buffer to prevent memory bloat
   const pendingWriteBufferRef = useRef<string[]>([]);
+  const pendingBufferSizeRef = useRef<number>(0); // Track total chars for O(1) size check
   const lastWriteTimeRef = useRef<number>(0);
   const writeTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const writeInProgressRef = useRef<boolean>(false);
   const userScrolledUpRef = useRef<boolean>(false);
   const lastScrollYRef = useRef<number>(0);
+  // Circular buffer for O(1) timestamp tracking instead of O(n) filter
+  const writeTimestampsRef = useRef<number[]>(new Array(60).fill(0));
+  const timestampIndexRef = useRef<number>(0);
 
 
 
@@ -330,8 +335,11 @@ export const TerminalCell = React.memo<TerminalCellProps>(({
     }
   }, []);
 
-  // Debounced scroll handler to prevent excessive re-renders
-  const scrollDebounceRef = useRef<NodeJS.Timeout | null>(null);
+  // Create debounced unread count updater using utility
+  const debouncedSetUnreadCount = useMemo(
+    () => debounce(() => setUnreadCount(0), 100),
+    []
+  );
 
   const handleScroll = useCallback(() => {
     if (!terminalRef.current) return;
@@ -351,16 +359,10 @@ export const TerminalCell = React.memo<TerminalCellProps>(({
     const isAtBottom = viewportY >= baseY - rows;
 
     // Debounce unread count updates
-    if (scrollDebounceRef.current) {
-      clearTimeout(scrollDebounceRef.current);
+    if (isAtBottom) {
+      debouncedSetUnreadCount();
     }
-
-    scrollDebounceRef.current = setTimeout(() => {
-      if (isAtBottom) {
-        setUnreadCount(0);
-      }
-    }, 100);
-  }, []);
+  }, [debouncedSetUnreadCount]);
 
   const lastDimensionsRef = useRef<{ cols: number; rows: number } | null>(null);
   const fitDebounceRef = useRef<NodeJS.Timeout | null>(null);
@@ -665,21 +667,57 @@ export const TerminalCell = React.memo<TerminalCellProps>(({
 
     // Setup event listeners (VAL-MEM-003)
 
+    // Helper: Restore scroll position after write if user was reading history
+    const restoreScrollPosition = (wasScrolledUp: boolean, savedScrollY: number, callback?: () => void) => {
+      if (!wasScrolledUp || savedScrollY <= 0) {
+        writeInProgressRef.current = false;
+        if (callback) callback();
+        return;
+      }
+      requestAnimationFrame(() => {
+        if (terminalRef.current) {
+          terminalRef.current.scrollToLine(savedScrollY);
+        }
+        writeInProgressRef.current = false;
+        if (callback) callback();
+      });
+    };
+
     // Optimized rate-limited terminal write with scroll stability fixes
+    // Uses circular buffer for O(1) timestamp tracking instead of O(n) filter
     const writeWithRateLimit = (data: string) => {
       if (!terminalRef.current || writeInProgressRef.current) return;
 
       const now = Date.now();
+      const timestamps = writeTimestampsRef.current;
+      const idx = timestampIndexRef.current;
 
-      // Clean up old timestamps (older than 1 second)
-      writeTimestampsRef.current = writeTimestampsRef.current.filter(ts => now - ts < 1000);
+      // Count recent writes (within last second) using circular buffer
+      let recentWrites = 0;
+      for (let i = 0; i < timestamps.length; i++) {
+        if (now - timestamps[i] < 1000) {
+          recentWrites++;
+        }
+      }
 
       // Check if we're over the rate limit
-      if (writeTimestampsRef.current.length >= MAX_WRITES_PER_SECOND) {
-        // Buffer the data for batch processing
+      if (recentWrites >= MAX_WRITES_PER_SECOND) {
+        // Buffer the data for batch processing with size limit
+        const dataLen = data.length;
+        if (pendingBufferSizeRef.current + dataLen > MAX_PENDING_BUFFER_CHARS) {
+          // Drop oldest 20% of buffer to make room
+          const dropCount = Math.ceil(pendingWriteBufferRef.current.length * 0.2);
+          let droppedChars = 0;
+          for (let i = 0; i < dropCount && pendingWriteBufferRef.current.length > 0; i++) {
+            droppedChars += pendingWriteBufferRef.current[0].length;
+            pendingWriteBufferRef.current.shift();
+          }
+          pendingBufferSizeRef.current -= droppedChars;
+        }
         pendingWriteBufferRef.current.push(data);
+        pendingBufferSizeRef.current += dataLen;
 
-        // Schedule drain if not already scheduled - use shorter delay for responsiveness
+        // Schedule drain if not already scheduled
         if (!writeTimeoutRef.current) {
           writeTimeoutRef.current = setTimeout(() => {
             if (!terminalRef.current) return;
@@ -690,27 +728,13 @@ export const TerminalCell = React.memo<TerminalCellProps>(({
             // Batch all pending data into single write
             const buffered = pendingWriteBufferRef.current.join('');
             pendingWriteBufferRef.current = [];
+            pendingBufferSizeRef.current = 0;
 
             if (buffered) {
-              // Remember if user was scrolled up BEFORE writing
               const wasScrolledUp = userScrolledUpRef.current;
               const savedScrollY = lastScrollYRef.current;
-
               terminalRef.current.write(buffered);
-
-              // Restore scroll position if user was reading history
-              // Use scrollRows with 0 to stay at current position instead of scrollToLine
-              if (wasScrolledUp && savedScrollY > 0) {
-                // Small delay to let xterm.js finish internal scroll
-                requestAnimationFrame(() => {
-                  if (terminalRef.current) {
-                    terminalRef.current.scrollToLine(savedScrollY);
-                  }
-                  writeInProgressRef.current = false;
-                });
-              } else {
-                writeInProgressRef.current = false;
-              }
+              restoreScrollPosition(wasScrolledUp, savedScrollY);
             } else {
               writeInProgressRef.current = false;
             }
@@ -719,8 +743,9 @@ export const TerminalCell = React.memo<TerminalCellProps>(({
         return;
       }
 
-      // Record this write timestamp
-      writeTimestampsRef.current.push(now);
+      // Record this write timestamp using circular buffer
+      timestamps[idx] = now;
+      timestampIndexRef.current = (idx + 1) % timestamps.length;
       writeInProgressRef.current = true;
 
       // Remember scroll state before write
@@ -730,17 +755,8 @@ export const TerminalCell = React.memo<TerminalCellProps>(({
       // Single write operation
       terminalRef.current.write(data);
 
-      // Restore scroll position if needed - use requestAnimationFrame for smoothness
-      if (wasScrolledUp && savedScrollY > 0) {
-        requestAnimationFrame(() => {
-          if (terminalRef.current) {
-            terminalRef.current.scrollToLine(savedScrollY);
-          }
-          writeInProgressRef.current = false;
-        });
-      } else {
-        writeInProgressRef.current = false;
-      }
+      // Restore scroll position if needed
+      restoreScrollPosition(wasScrolledUp, savedScrollY);
     };
 
     listenersRef.current.unsubscribeData = backendAPI.onTerminalData((event: { terminalId: string; data: string }) => {
@@ -939,12 +955,14 @@ export const TerminalCell = React.memo<TerminalCellProps>(({
         clearTimeout(writeTimeoutRef.current);
         writeTimeoutRef.current = null;
       }
-      if (scrollDebounceRef.current) {
-        clearTimeout(scrollDebounceRef.current);
-        scrollDebounceRef.current = null;
-      }
+      // Cancel the debounced function
+      debouncedSetUnreadCount.cancel();
+
       pendingWriteBufferRef.current = [];
-      writeTimestampsRef.current = [];
+      pendingBufferSizeRef.current = 0;
+      // Reset circular buffer timestamps instead of empty array
+      writeTimestampsRef.current.fill(0);
+      timestampIndexRef.current = 0;
       writeInProgressRef.current = false;
 
       // Disconnect ResizeObserver to prevent layout observation after unmount

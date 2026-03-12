@@ -5,13 +5,16 @@
 
 type AnyFunction = (...args: any[]) => any;
 
+// Debounced function type that includes cancel method
+type DebouncedFunction<T extends AnyFunction> = T & { cancel(): void };
+
 /**
  * Creates a debounced version of a function
  * @param fn - Function to debounce
  * @param delay - Delay in milliseconds
- * @returns Debounced function
+ * @returns Debounced function with cancel method
  */
-export function debounce<T extends AnyFunction>(fn: T, delay: number): T {
+export function debounce<T extends AnyFunction>(fn: T, delay: number): DebouncedFunction<T> {
   let timeoutId: NodeJS.Timeout | null = null;
 
   const debounced = ((...args: Parameters<T>) => {
@@ -22,10 +25,10 @@ export function debounce<T extends AnyFunction>(fn: T, delay: number): T {
       fn(...args);
       timeoutId = null;
     }, delay);
-  }) as T;
+  }) as DebouncedFunction<T>;
 
   // Add cancel method
-  (debounced as any).cancel = () => {
+  debounced.cancel = () => {
     if (timeoutId) {
       clearTimeout(timeoutId);
       timeoutId = null;

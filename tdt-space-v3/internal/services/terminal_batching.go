@@ -22,7 +22,7 @@ const (
 	batchFlushInterval  = 16 * time.Millisecond // ~60fps - optimized for scroll stability
 	batchMaxSize        = 8192                  // bytes - smaller chunks for more frequent flushes
 	maxBufferedDataSize = 512 * 1024            // 512KB max buffered data
-	minFlushInterval    = 16 * time.Millisecond // minimum time between flushes - prevents overlap
+	// minFlushInterval removed - was duplicate of batchFlushInterval (both 16ms)
 
 	// Background workspace optimization
 	backgroundBufferMaxSize = 256 * 1024       // 256KB max for background terminals
@@ -39,7 +39,6 @@ type terminalBatcher struct {
 	buf            []byte
 	timer          *time.Timer
 	done           chan struct{}
-	lastFlushTime  time.Time // track last flush time to enforce minFlushInterval
 	// Buffer for data events when context is nil
 	bufferedData [][]byte
 	bufferedSize int
@@ -59,7 +58,6 @@ func newTerminalBatcher(terminalID string, appGetter func() *application.App) *t
 		isActiveGetter:   func() bool { return true }, // Default to active
 		buf:              make([]byte, 0, batchMaxSize),
 		done:             make(chan struct{}),
-		lastFlushTime:    time.Now(),
 		bufferedData:     make([][]byte, 0),
 		bufferedSize:     0,
 		backgroundBuffer: make([][]byte, 0),
@@ -196,21 +194,8 @@ func (b *terminalBatcher) flushLocked() {
 		return
 	}
 
-	// Enforce minimum flush interval to prevent overwhelming xterm.js
-	// This helps prevent text scrambling when data comes too fast
-	timeSinceLastFlush := time.Since(b.lastFlushTime)
-	if timeSinceLastFlush < minFlushInterval {
-		// Reschedule timer for remaining time
-		if b.timer != nil {
-			b.timer.Stop()
-		}
-		b.timer = time.AfterFunc(minFlushInterval-timeSinceLastFlush, func() {
-			b.mu.Lock()
-			defer b.mu.Unlock()
-			b.flushLocked()
-		})
-		return
-	}
+	// Note: minFlushInterval was removed as it was identical to batchFlushInterval (16ms)
+	// The batch timer already enforces this rate limit, making this check redundant
 
 	app := b.appGetter()
 	if app == nil {
@@ -252,9 +237,6 @@ func (b *terminalBatcher) flushLocked() {
 			b.timer.Stop()
 			b.timer = nil
 		}
-
-		// Update last flush time
-		b.lastFlushTime = time.Now()
 
 		// Emit event to frontend — data is converted to string to prevent base64 encoding
 		app.Event.Emit("terminal-data", TerminalDataEvent{
