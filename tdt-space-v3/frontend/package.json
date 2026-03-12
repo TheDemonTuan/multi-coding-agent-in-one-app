@@ -1,0 +1,46 @@
+{
+  "name": "tdt-space",
+  "productName": "TDT Space",
+  "version": "0.1.2",
+  "description": "Multi-Agent Terminal for TDT Vibe Coding",
+  "author": "TDT Space Team",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "build:dev": "vite build --mode development",
+    "preview": "vite preview",
+    "wails:dev": "wails3 dev",
+    "wails:build": "wails3 build",
+    "wails:build:prod": "cd .. && task build",
+    "wails:build:installer": "cd .. && task package",
+    "wails:build:windows": "cd .. && task windows:build",
+    "wails:build:linux": "cd .. && task linux:build",
+    "wails:build:macos": "cd .. && task darwin:build",
+    "wails:build:macos-arm": "cd .. && task darwin:build",
+    "wails:build:all": "cd .. && task build"
+  },
+  "dependencies": {
+    "@wailsio/runtime": "latest",
+    "@xterm/addon-fit": "^0.11.0",
+    "@xterm/addon-search": "^0.16.0",
+    "@xterm/addon-web-links": "^0.12.0",
+    "@xterm/addon-webgl": "^0.19.0",
+    "@xterm/xterm": "^6.0.0",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4",
+    "react-resizable-panels": "^4.7.1",
+    "zustand": "^5.0.11"
+  },
+  "devDependencies": {
+    "@types/node": "^25.3.5",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^5.1.4",
+    "lightningcss": "^1.32.0",
+    "rollup-plugin-visualizer": "^7.0.1",
+    "terser": "^5.46.0",
+    "typescript": "~5.9.3",
+    "vite": "^7.3.1"
+  }
+}

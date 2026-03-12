@@ -1,0 +1,13 @@
+[Desktop Entry]
+Version=1.0
+Name=My Product
+Comment=A tdt-space-v3 application
+# The Exec line includes %u to pass the URL to the application
+Exec=/usr/local/bin/tdt-space-v3.exe %u
+Terminal=false
+Type=Application
+Icon=tdt-space-v3.exe
+Categories=Utility;
+StartupWMClass=tdt-space-v3.exe
+
+ 

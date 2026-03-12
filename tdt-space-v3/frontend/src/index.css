@@ -1,0 +1,110 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html, body, #root {
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+.terminal-cell {
+  transition: all 0.2s ease;
+}
+
+.terminal-cell:hover:not(.active) {
+  border-color: #45475acc !important;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4) !important;
+}
+
+.terminal-cell:hover:not(.active) .close-button,
+.terminal-cell:hover:not(.active) .tab-to-focus-hint {
+  opacity: 1 !important;
+}
+
+.terminal-cell.active {
+  box-shadow: 0 0 0 2px rgba(137, 180, 250, 0.3), 0 4px 16px rgba(137, 180, 250, 0.2) !important;
+}
+
+/* Close button hover effect */
+.close-button:hover {
+  background-color: #f38ba8 !important;
+  color: #ffffff !important;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: #181825;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #45475a;
+  border-radius: 5px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #585b70;
+}
+
+/* Xterm overrides */
+.xterm {
+  padding: 4px;
+}
+
+.xterm-viewport::-webkit-scrollbar {
+  width: 10px;
+}
+
+.xterm-viewport::-webkit-scrollbar-track {
+  background: #181825;
+}
+
+.xterm-viewport::-webkit-scrollbar-thumb {
+  background: #45475a;
+  border-radius: 5px;
+}
+
+/* Panel resize handles - thin and subtle */
+[data-separator] {
+  transition: background-color 0.15s ease;
+  background-color: rgba(69, 71, 90, 0.2);
+}
+
+[data-separator]:hover {
+  background-color: rgba(137, 180, 250, 0.5);
+}
+
+/* Horizontal resize handle (between rows - vertical group) */
+[data-separator][data-panel-group-orientation="vertical"] {
+  height: 4px;
+}
+
+/* Vertical resize handle (between columns - horizontal group) */
+[data-separator][data-panel-group-orientation="horizontal"] {
+  width: 4px;
+}
+
+/* Custom title bar - enable dragging */
+.title-bar {
+  -webkit-app-region: drag;
+}
+
+.title-bar button,
+.title-bar * {
+  -webkit-app-region: no-drag;
+}

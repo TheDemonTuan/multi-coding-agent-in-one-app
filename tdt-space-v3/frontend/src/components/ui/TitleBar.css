@@ -1,0 +1,188 @@
+/* Compact Title Bar */
+.title-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 12px;
+  background: linear-gradient(180deg, #181825 0%, #11111b 100%);
+  border-bottom: 1px solid #313244;
+  user-select: none;
+  height: 44px;
+  /* Wails v3 frameless window drag */
+  --wails-draggable: drag;
+}
+
+/* macOS: leave space for native traffic light buttons (close/minimize/maximize) */
+.title-bar.macos {
+  padding-left: 80px;
+}
+
+.title-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.app-identity {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.app-icon {
+  font-size: 18px;
+  line-height: 1;
+}
+
+.app-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: #cdd6f4;
+  letter-spacing: 0.3px;
+}
+
+.workspace-indicator {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  background: rgba(69, 71, 90, 0.2);
+  border-radius: 6px;
+  border: 1px solid rgba(69, 71, 90, 0.5);
+}
+
+.indicator-separator {
+  color: #45475a;
+  font-size: 12px;
+}
+
+.workspace-icon {
+  font-size: 14px;
+}
+
+.workspace-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: #a6adc8;
+}
+
+.title-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.theme-toggle-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  font-size: 16px;
+  background: transparent;
+  border: 1px solid #45475a;
+  border-radius: 6px;
+  color: #cdd6f4;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  --wails-draggable: no-drag;
+}
+
+.theme-toggle-btn:hover {
+  background: rgba(69, 71, 90, 0.3);
+  border-color: #585b70;
+  transform: translateY(-1px);
+}
+
+.window-controls {
+  display: flex;
+  gap: 4px;
+  padding-left: 8px;
+  border-left: 1px solid #313244;
+}
+
+.window-control-btn {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 6px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  --wails-draggable: no-drag;
+}
+
+.window-control-btn.minimize {
+  background: #45475a;
+  color: #cdd6f4;
+}
+
+.window-control-btn.minimize:hover {
+  background: #585b70;
+  transform: translateY(-1px);
+}
+
+.window-control-btn.maximize {
+  background: #45475a;
+  color: #cdd6f4;
+}
+
+.window-control-btn.maximize:hover {
+  background: #585b70;
+  transform: translateY(-1px);
+}
+
+.window-control-btn.close {
+  background: linear-gradient(135deg, #f38ba8 0%, #eba0ac 100%);
+  color: #1e1e2e;
+}
+
+.window-control-btn.close:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 8px rgba(243, 139, 168, 0.3);
+}
+
+/* Vietnamese IME Patch Indicator */
+.vn-patch-indicator {
+  display: flex;
+  align-items: center;
+  padding: 4px 8px;
+  margin-left: 8px;
+  background-color: rgba(137, 180, 250, 0.1);
+  border: 1px solid rgba(137, 180, 250, 0.3);
+  border-radius: 4px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.vn-patch-indicator:hover {
+  background-color: rgba(137, 180, 250, 0.2);
+  border-color: rgba(137, 180, 250, 0.5);
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .title-bar {
+    padding: 6px 10px;
+    height: 40px;
+  }
+
+  .workspace-indicator {
+    display: none;
+  }
+
+  .theme-toggle-btn {
+    width: 28px;
+    height: 28px;
+  }
+
+  .window-control-btn {
+    width: 24px;
+    height: 24px;
+  }
+}

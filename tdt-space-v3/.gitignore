@@ -1,0 +1,7 @@
+.task
+bin
+frontend/dist
+frontend/node_modules
+frontend/bun.lockb
+build/linux/appimage/build
+build/windows/nsis/MicrosoftEdgeWebview2Setup.exe

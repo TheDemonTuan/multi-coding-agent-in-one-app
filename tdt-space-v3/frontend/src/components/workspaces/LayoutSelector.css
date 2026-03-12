@@ -1,0 +1,47 @@
+/* Layout Selector Button */
+.layout-selector-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  border: 2px solid #89b4fa;
+  border-radius: 6px;
+  background-color: rgba(137, 180, 250, 0.12);
+  color: #89b4fa;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.layout-selector-btn:hover {
+  background-color: rgba(137, 180, 250, 0.25);
+  transform: translateY(-1px);
+}
+
+.layout-selector-btn .btn-icon {
+  font-size: 14px;
+  line-height: 1;
+}
+
+/* Compact variant for merged header */
+.workspace-tab-bar .layout-selector-btn.compact {
+  padding: 6px 8px;
+  border: 1px solid #45475a;
+  background-color: transparent;
+  color: #cdd6f4;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.workspace-tab-bar .layout-selector-btn.compact:hover {
+  background-color: rgba(69, 71, 90, 0.5);
+  border-color: #585b70;
+}
+
+.workspace-tab-bar .layout-selector-btn.compact .btn-icon {
+  font-size: 16px;
+}
