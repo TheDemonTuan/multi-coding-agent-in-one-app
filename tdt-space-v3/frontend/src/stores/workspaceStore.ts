@@ -539,7 +539,9 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => {
       }
 
       useWorkspaceStore.getState().updateTerminalStatus(terminalId, 'stopped');
-      await new Promise(resolve => setTimeout(resolve, 100));
+      // Increase delay from 100ms to 200ms for consistency with switchTerminalAgent
+      // This ensures batcher flushes all pending data before respawning
+      await new Promise(resolve => setTimeout(resolve, 200));
 
       try {
         let result;
@@ -602,13 +604,18 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => {
       });
 
       try {
+        // Fix 5: Kill terminal process first
         await backendAPI.terminalKill(terminalId);
       } catch (err) {
         console.error('[WorkspaceStore] Failed to kill terminal for agent switch:', err);
       }
 
+      // Update status to stopped
       useWorkspaceStore.getState().updateTerminalStatus(terminalId, 'stopped');
-      await new Promise(resolve => setTimeout(resolve, 100));
+      
+      // Increase delay from 100ms to 200ms to ensure batcher flushes all pending data
+      // This prevents text scrambling from old terminal mixing with new terminal
+      await new Promise(resolve => setTimeout(resolve, 200));
 
       try {
         let result;

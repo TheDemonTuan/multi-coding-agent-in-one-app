@@ -111,6 +111,13 @@ export const TerminalCell = React.memo<TerminalCellProps>(({
   const dataBufferRef = useRef<string[]>([]);
   const isInitialFitCompleteRef = useRef(false);
   const commandBlockTrackerRef = useRef<CommandBlockTracker | null>(null);
+  
+  // Fix 1: Terminal generation counter to prevent race conditions during agent switch
+  // Each time terminal is respawned, increment generation to invalidate old events
+  const terminalGenerationRef = useRef<number>(0);
+  
+  // Fix 2: Flag to ignore events during agent switch
+  const isSwitchingAgentRef = useRef<boolean>(false);
 
   // Performance tracking for conditional WebGL (Option C: Balanced)
   const totalDataReceivedRef = useRef<number>(0);
@@ -420,6 +427,10 @@ export const TerminalCell = React.memo<TerminalCellProps>(({
   // Spawn terminal with dimensions - called after initial fit completes
   const spawnTerminalWithDimensions = useCallback((terminalId: string, cols: number, rows: number) => {
     const workspaceId = currentWorkspace?.id;
+    
+    // Fix 1: Increment generation counter for new terminal spawn
+    // This invalidates any pending events from previous terminal instance
+    terminalGenerationRef.current += 1;
 
     // Timeout for terminal-started event
     const startTimeout = setTimeout(() => {
@@ -663,35 +674,42 @@ export const TerminalCell = React.memo<TerminalCellProps>(({
     };
 
     listenersRef.current.unsubscribeData = backendAPI.onTerminalData((event: { terminalId: string; data: string }) => {
-      if (event.terminalId === terminal.id && terminalRef.current) {
-        let outputData = event.data;
-        
-        // Track total data received for WebGL conditional loading (Option C)
-        totalDataReceivedRef.current += outputData.length;
-        
-        // Parse OSC 133 shell integration markers if present
-        const hasOSC = outputData.includes('\x1b]133;');
-        if (hasOSC) {
-          const { cleaned, markers } = parseOSC133(outputData);
-          if (markers.length > 0) {
-            commandBlockTrackerRef.current?.processMarkers(markers);
-            outputData = cleaned;
-          }
+      // Fix 2: Ignore events during agent switch to prevent race conditions
+      if (isSwitchingAgentRef.current) {
+        return;
+      }
+      
+      if (event.terminalId !== terminal.id || !terminalRef.current) {
+        return;
+      }
+      
+      let outputData = event.data;
+      
+      // Track total data received for WebGL conditional loading (Option C)
+      totalDataReceivedRef.current += outputData.length;
+      
+      // Parse OSC 133 shell integration markers if present
+      const hasOSC = outputData.includes('\x1b]133;');
+      if (hasOSC) {
+        const { cleaned, markers } = parseOSC133(outputData);
+        if (markers.length > 0) {
+          commandBlockTrackerRef.current?.processMarkers(markers);
+          outputData = cleaned;
         }
+      }
 
-        // Buffer data until initial fit is complete
-        if (!isInitialFitCompleteRef.current) {
-          dataBufferRef.current.push(outputData);
-          return;
-        }
-        
-        // Use rate-limited write (Option C: FPS capping)
-        writeWithRateLimit(outputData);
+      // Buffer data until initial fit is complete
+      if (!isInitialFitCompleteRef.current) {
+        dataBufferRef.current.push(outputData);
+        return;
+      }
+      
+      // Use rate-limited write (Option C: FPS capping)
+      writeWithRateLimit(outputData);
 
-        const buffer = terminalRef.current.buffer.active;
-        if (buffer.viewportY < buffer.baseY - buffer.viewportY) {
-          setUnreadCount((prev: number) => prev + 1);
-        }
+      const buffer = terminalRef.current.buffer.active;
+      if (buffer.viewportY < buffer.baseY - buffer.viewportY) {
+        setUnreadCount((prev: number) => prev + 1);
       }
     });
 
@@ -859,30 +877,26 @@ export const TerminalCell = React.memo<TerminalCellProps>(({
         resizeObserverRef.current = null;
       }
 
-      // Unsubscribe all IPC event listeners to prevent memory leaks (VAL-MEM-003)
-
+      // Fix 3: Unsubscribe all IPC event listeners FIRST (before killing terminal)
+      // This prevents race conditions where events arrive after terminal is killed
       if (listenersRef.current.unsubscribeData) {
-
         listenersRef.current.unsubscribeData();
       }
       if (listenersRef.current.unsubscribeStarted) {
-
         listenersRef.current.unsubscribeStarted();
       }
       if (listenersRef.current.unsubscribeExit) {
-
         listenersRef.current.unsubscribeExit();
       }
       if (listenersRef.current.unsubscribeError) {
-
         listenersRef.current.unsubscribeError();
       }
 
       listenersRef.current = {};
 
 
-      // Kill PTY process BEFORE disposing UI terminal
-      // This ensures the process is terminated and won't send more data
+      // Fix 3: Kill PTY process AFTER unsubscribing events
+      // This ensures no new events can arrive after we've cleaned up listeners
       backendAPI.terminalKill(terminal.id).catch((_err: any) => {
         // fire-and-forget; ignore errors during cleanup
       });
@@ -981,6 +995,9 @@ export const TerminalCell = React.memo<TerminalCellProps>(({
       isInitialFitCompleteRef.current = false;
       dataBufferRef.current = [];
       lastDimensionsRef.current = null;
+      // Fix 1 & 2: Reset generation counter and switching flag
+      terminalGenerationRef.current = 0;
+      isSwitchingAgentRef.current = false;
     };
   }, []);
 
