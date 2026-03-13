@@ -674,6 +674,47 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => {
     /**
      * Cleanup debounce timers on app quit
      */
+    swapTerminals: (sourceId: string, targetId: string) => {
+      if (sourceId === targetId) return;
+
+      set((state) => {
+        if (!state.currentWorkspace) return state;
+
+        const terminals = [...state.currentWorkspace.terminals];
+        const sourceIndex = terminals.findIndex(t => t.id === sourceId);
+        const targetIndex = terminals.findIndex(t => t.id === targetId);
+
+        if (sourceIndex === -1 || targetIndex === -1) return state;
+
+        // Swap positions in the array
+        [terminals[sourceIndex], terminals[targetIndex]] =
+          [terminals[targetIndex], terminals[sourceIndex]];
+
+        // Update titles to reflect new positions (Terminal 1, Terminal 2, ...)
+        terminals.forEach((term, idx) => {
+          term.title = `Terminal ${idx + 1}`;
+        });
+
+        const updatedWorkspace = { ...state.currentWorkspace, terminals };
+
+        const updatedWorkspaces = state.workspaces.map(ws =>
+          ws.id === state.currentWorkspace!.id ? updatedWorkspace : ws
+        );
+
+        // Update backend asynchronously
+        backendAPI.updateWorkspace(updatedWorkspace)
+          .catch((err) => {
+            console.error('[WorkspaceStore] Failed to save after swap terminals:', err);
+          });
+
+        return {
+          currentWorkspace: updatedWorkspace,
+          workspaces: updatedWorkspaces,
+        };
+      });
+    },
+
+
     _cleanupDebounceTimers: () => {
       debounceSave.clear();
     },

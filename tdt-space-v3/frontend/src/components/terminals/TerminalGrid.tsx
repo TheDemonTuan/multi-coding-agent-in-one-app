@@ -1,4 +1,4 @@
-import React, { useRef, useCallback, useEffect } from 'react';
+import React, { useRef, useCallback, useEffect, useState } from 'react';
 import { useWorkspaceStore } from '../../stores/workspaceStore';
 import { TerminalCell } from './TerminalCell';
 import { WorkspaceLayout } from '../../types/workspace';
@@ -12,6 +12,11 @@ export const TerminalGrid = React.memo(() => {
   const setActiveTerminal = useWorkspaceStore((s) => s.setActiveTerminal);
   const removeTerminal = useWorkspaceStore((s) => s.removeTerminal);
   const splitTerminal = useWorkspaceStore((s) => s.splitTerminal);
+  const swapTerminals = useWorkspaceStore((s) => s.swapTerminals);
+
+  // Drag state
+  const [draggedTerminalId, setDraggedTerminalId] = useState<string | null>(null);
+  const [dragOverTerminalId, setDragOverTerminalId] = useState<string | null>(null);
 
   // Track which workspaces have been rendered (lazy rendering)
   // Once a workspace is rendered, it stays mounted to preserve terminal state
@@ -52,6 +57,34 @@ export const TerminalGrid = React.memo(() => {
     previousWorkspaceIdRef.current = currentId;
   }, [currentWorkspace?.id]);
 
+  // Drag handlers
+  const handleDragStart = useCallback((terminalId: string) => {
+    setDraggedTerminalId(terminalId);
+  }, []);
+
+  const handleDragOver = useCallback((terminalId: string) => {
+    if (draggedTerminalId && draggedTerminalId !== terminalId) {
+      setDragOverTerminalId(terminalId);
+    }
+  }, [draggedTerminalId]);
+
+  const handleDragLeave = useCallback(() => {
+    setDragOverTerminalId(null);
+  }, []);
+
+  const handleDrop = useCallback((targetId: string) => {
+    if (draggedTerminalId && draggedTerminalId !== targetId) {
+      swapTerminals(draggedTerminalId, targetId);
+    }
+    setDraggedTerminalId(null);
+    setDragOverTerminalId(null);
+  }, [draggedTerminalId, swapTerminals]);
+
+  const handleDragEnd = useCallback(() => {
+    setDraggedTerminalId(null);
+    setDragOverTerminalId(null);
+  }, []);
+
   if (!currentWorkspace) {
     return <div>No workspace selected</div>;
   }
@@ -79,6 +112,13 @@ export const TerminalGrid = React.memo(() => {
                   handleSetActiveTerminal,
                   handleRemoveTerminal,
                   handleSplitTerminal,
+                  draggedTerminalId,
+                  dragOverTerminalId,
+                  handleDragStart,
+                  handleDragOver,
+                  handleDragLeave,
+                  handleDrop,
+                  handleDragEnd,
                 )}
               </div>
             );
@@ -110,6 +150,13 @@ const renderWorkspace = (
   setActiveTerminal: (id: string) => void,
   removeTerminal: (terminalId: string) => void,
   splitTerminal: (terminalId: string, direction: 'horizontal' | 'vertical') => void,
+  draggedTerminalId: string | null,
+  dragOverTerminalId: string | null,
+  onDragStart: (terminalId: string) => void,
+  onDragOver: (terminalId: string) => void,
+  onDragLeave: () => void,
+  onDrop: (terminalId: string) => void,
+  onDragEnd: () => void,
 ) => {
   const { columns, rows, terminals } = workspace;
 
@@ -132,17 +179,31 @@ const renderWorkspace = (
             key={terminal.id}
             style={{
               ...styles.simpleContainer,
-              border: '1px solid #45475a40',
+              border: dragOverTerminalId === terminal.id
+                ? '2px solid #89b4fa'
+                : '1px solid #45475a40',
               borderRadius: '4px',
               overflow: 'hidden',
+              opacity: draggedTerminalId === terminal.id ? 0.5 : 1,
+              boxShadow: dragOverTerminalId === terminal.id
+                ? '0 0 10px rgba(137, 180, 250, 0.3)'
+                : 'none',
+              transition: 'all 0.15s ease',
             }}
           >
             <TerminalCell
               terminal={terminal}
               isActive={terminal.id === activeTerminalId}
+              isDragging={draggedTerminalId === terminal.id}
+              isDragOver={dragOverTerminalId === terminal.id}
               onActivate={() => setActiveTerminal(terminal.id)}
               onSplit={(direction) => splitTerminal(terminal.id, direction)}
               onClose={() => removeTerminal(terminal.id)}
+              onDragStart={() => onDragStart(terminal.id)}
+              onDragOver={() => onDragOver(terminal.id)}
+              onDragLeave={onDragLeave}
+              onDrop={() => onDrop(terminal.id)}
+              onDragEnd={onDragEnd}
             />
           </div>
         ))}
@@ -157,9 +218,16 @@ const renderWorkspace = (
       <TerminalCell
         terminal={terminal}
         isActive={terminal.id === activeTerminalId}
+        isDragging={draggedTerminalId === terminal.id}
+        isDragOver={dragOverTerminalId === terminal.id}
         onActivate={() => setActiveTerminal(terminal.id)}
         onSplit={(direction) => splitTerminal(terminal.id, direction)}
         onClose={() => removeTerminal(terminal.id)}
+        onDragStart={() => onDragStart(terminal.id)}
+        onDragOver={() => onDragOver(terminal.id)}
+        onDragLeave={onDragLeave}
+        onDrop={() => onDrop(terminal.id)}
+        onDragEnd={onDragEnd}
       />
     </div>
   );

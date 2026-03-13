@@ -84,10 +84,17 @@ const AGENT_ICONS: Record<AgentType, string> = {
 interface TerminalCellProps {
   terminal: TerminalPane;
   isActive: boolean;
+  isDragging?: boolean;
+  isDragOver?: boolean;
   onActivate: () => void;
   onSplit?: (direction: 'horizontal' | 'vertical') => void;
   onClear?: () => void;
   onClose?: () => void;
+  onDragStart?: () => void;
+  onDragOver?: () => void;
+  onDragLeave?: () => void;
+  onDrop?: () => void;
+  onDragEnd?: () => void;
 }
 
 const agentIcons = AGENT_ICONS;
@@ -96,10 +103,17 @@ const agentIcons = AGENT_ICONS;
 export const TerminalCell = React.memo<TerminalCellProps>(({
   terminal,
   isActive,
+  isDragging,
+  isDragOver: isDragOverProp,
   onActivate,
   onSplit,
   onClear,
   onClose,
+  onDragStart,
+  onDragOver: onDragOverProp,
+  onDragLeave: onDragLeaveProp,
+  onDrop: onDropProp,
+  onDragEnd,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const terminalRef = useRef<Terminal | null>(null);
@@ -352,6 +366,7 @@ const queuedWrite = useCallback((data: string) => {
     if (terminalRef.current) {
       terminalRef.current.scrollToBottom();
       setUnreadCount(0);
+      userScrolledUpRef.current = false; // Reset scroll state
     }
   }, []);
 
@@ -371,6 +386,9 @@ const queuedWrite = useCallback((data: string) => {
 
     // Check if at bottom
     const isAtBottom = viewportY >= baseY - rows;
+
+    // Track if user has scrolled up
+    userScrolledUpRef.current = !isAtBottom;
 
     // Debounce unread count updates
     if (isAtBottom) {
@@ -573,24 +591,22 @@ const queuedWrite = useCallback((data: string) => {
     term.loadAddon(searchAddon);
     term.loadAddon(clipboardAddon);
     term.open(containerRef.current);
-    
-    // Lazy load WebGL addon only when terminal becomes active to reduce startup memory
-    // WebGL can use 50-100MB per instance for texture atlas and shaders
-    // Initial load deferred until terminal is activated by user
-    const shouldLoadWebGL = isActive;
-    if (shouldLoadWebGL) {
-      try {
-        const webglAddon = new WebglAddon();
-        webglAddon.onContextLoss(() => {
-          webglAddon.dispose();
-          webglAddonRef.current = null;
-        });
-        term.loadAddon(webglAddon);
-        webglAddonRef.current = webglAddon;
-      } catch (err) {
-        // WebGL not available, fallback to Canvas renderer
-      }
+
+
+    // Load WebGL addon immediately during terminal initialization
+    // This prevents text disappearance when terminal becomes active
+    try {
+      const webglAddon = new WebglAddon();
+      webglAddon.onContextLoss(() => {
+        webglAddon.dispose();
+        webglAddonRef.current = null;
+      });
+      term.loadAddon(webglAddon);
+      webglAddonRef.current = webglAddon;
+    } catch (err) {
+      // WebGL not available, fallback to Canvas renderer
     }
+    
 
     // Delay initial fit to ensure container has proper dimensions
     // This prevents garbled/corrupted text rendering on first load
@@ -696,13 +712,17 @@ const queuedWrite = useCallback((data: string) => {
         dataBufferRef.current.push(outputData);
         return;
       }
-      
-      // Direct write - no rate limiting needed, backend batching handles flow control
+      // Save current scroll position if user has scrolled up
+      const buffer = terminalRef.current.buffer.active;
+      const savedViewportY = buffer.viewportY;
+      const wasScrolledUp = userScrolledUpRef.current;
+
+      // Write data to terminal
       terminalRef.current.write(outputData);
 
-      // Update unread count if scrolled up
-      const buffer = terminalRef.current.buffer.active;
-      if (buffer.viewportY < buffer.baseY - terminalRef.current.rows) {
+      // If user was scrolled up, restore their scroll position
+      if (wasScrolledUp && terminalRef.current) {
+        terminalRef.current.scrollToLine(savedViewportY);
         setUnreadCount((prev: number) => prev + 1);
       }
     });
@@ -1066,60 +1086,6 @@ const queuedWrite = useCallback((data: string) => {
     };
   }, [terminal.agent?.enabled, terminal.agent?.type, terminal.id, queuedWrite]);
 
-    // Track if WebGL has been loaded (once per terminal lifetime)
-  const hasWebGLLoadedRef = useRef(false);
-  // Track WebGL loading state for smooth transition
-  const [isWebGLLoading, setIsWebGLLoading] = useState(false);
-
-  // Load WebGL addon when terminal becomes active for better performance
-  // Only load once per terminal lifetime (cách 3: chỉ load 1 lần)
-  useEffect(() => {
-    if (isActive && terminalRef.current && !hasWebGLLoadedRef.current && !isWebGLLoading) {
-      setIsWebGLLoading(true);
-      
-      // Delay WebGL loading slightly to let the focus transition complete
-      // This reduces the visual jank (cách 2: smooth transition)
-      const loadTimer = setTimeout(() => {
-        try {
-          const webglAddon = new WebglAddon();
-          webglAddon.onContextLoss(() => {
-            webglAddon.dispose();
-            webglAddonRef.current = null;
-            hasWebGLLoadedRef.current = false;
-          });
-          terminalRef.current!.loadAddon(webglAddon);
-          webglAddonRef.current = webglAddon;
-          hasWebGLLoadedRef.current = true;
-
-          // CRITICAL: WebGL addon changes cell metrics (different from Canvas renderer).
-          // Must re-fit terminal after WebGL loads to recalculate cols/rows,
-          // otherwise TUI apps (OpenCode, Codex, etc.) will render with wrong width.
-          // Use double requestAnimationFrame for smoother transition
-          requestAnimationFrame(() => {
-            requestAnimationFrame(() => {
-              if (fitAddonRef.current && terminalRef.current) {
-                fitAddonRef.current.fit();
-                const { cols, rows } = terminalRef.current;
-                if (!lastDimensionsRef.current ||
-                  lastDimensionsRef.current.cols !== cols ||
-                  lastDimensionsRef.current.rows !== rows) {
-                  lastDimensionsRef.current = { cols, rows };
-                  backendAPI.terminalResize(terminal.id, cols, rows);
-                }
-              }
-              // Fade out loading state after resize is complete
-              setTimeout(() => setIsWebGLLoading(false), 50);
-            });
-          });
-        } catch (err) {
-          // WebGL not available or failed to load, fallback to Canvas renderer
-          setIsWebGLLoading(false);
-        }
-      }, 150); // Small delay to let focus transition settle
-
-      return () => clearTimeout(loadTimer);
-    }
-  }, [isActive, terminal.id, isWebGLLoading]);
 
   // Spawn terminal when workspace becomes active and terminal hasn't started yet
   // This handles cases where:
@@ -1230,7 +1196,7 @@ const queuedWrite = useCallback((data: string) => {
 
   return (
     <div
-      className={`terminal-cell ${isActive ? 'active' : ''}`}
+      className={`terminal-cell ${isActive ? 'active' : ''} ${isDragging ? 'dragging' : ''} ${isDragOverProp ? 'drag-over' : ''}`}
       data-theme={theme}
       onClick={onActivate}
       onContextMenu={handleContextMenu}
@@ -1240,7 +1206,34 @@ const queuedWrite = useCallback((data: string) => {
       onKeyDown={handleContainerKeyDown}
       tabIndex={-1}
     >
-      <div className="terminal-header">
+      <div
+        className="terminal-header"
+        draggable={true}
+        onDragStart={(e) => {
+          e.dataTransfer.setData('text/plain', terminal.id);
+          e.dataTransfer.effectAllowed = 'move';
+          onDragStart?.();
+        }}
+        onDragOver={(e) => {
+          e.preventDefault();
+          e.dataTransfer.dropEffect = 'move';
+          onDragOverProp?.();
+        }}
+        onDragLeave={() => {
+          onDragLeaveProp?.();
+        }}
+        onDrop={(e) => {
+          e.preventDefault();
+          onDropProp?.();
+        }}
+        onDragEnd={() => {
+          onDragEnd?.();
+        }}
+        style={{
+          cursor: isDragging ? 'grabbing' : 'grab',
+          opacity: isDragging ? 0.8 : 1,
+        }}
+      >
         <div className="terminal-header-left">
           {agentIcon && <span className="terminal-agent-icon">{agentIcon}</span>}
           <span className="terminal-title">{terminal.title}</span>
@@ -1287,7 +1280,7 @@ const queuedWrite = useCallback((data: string) => {
 
       <div
         ref={containerRef}
-        className={`terminal-canvas-area${isDragOver ? ' drag-over' : ''}${isWebGLLoading ? ' webgl-loading' : ''}`}
+        className={`terminal-canvas-area${isDragOver ? ' drag-over' : ''}`}
       >
         {isDragOver && (
           <div className="terminal-drag-overlay">
