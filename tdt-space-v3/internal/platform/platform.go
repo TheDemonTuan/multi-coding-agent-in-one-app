@@ -46,7 +46,10 @@ func GetDefaultShell() string {
 // GetShellArgs returns the arguments to pass to the shell.
 func GetShellArgs() []string {
 	if IsWindows() {
-		return []string{"-NoLogo", "-NoExit"}
+		return []string{"-NoLogo", "-NoExit", "-Command",
+			"[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; " +
+				"[Console]::InputEncoding = [System.Text.Encoding]::UTF8; " +
+				"chcp 65001 | Out-Null"}
 	}
 	return []string{}
 }

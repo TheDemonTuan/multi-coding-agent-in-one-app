@@ -1,0 +1,11 @@
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Build artifacts
+opencode-proxy
+opencode-proxy.exe
+
+# Logs
+*.log

@@ -137,8 +137,11 @@ export const TerminalCell = React.memo<TerminalCellProps>(({
   const xtermDisposablesRef = useRef<{
     onDataDisposable?: { dispose(): void };
     onScrollDisposable?: { dispose(): void };
+    onBufferChangeDisposable?: { dispose(): void };
     // attachCustomKeyEventHandler returns void, so we store a cleanup flag instead
     customKeyHandlerCleanup?: () => void;
+    // attachCustomWheelEventHandler returns void, so we store a cleanup flag
+    wheelHandlerCleanup?: () => void;
   }>({});
 
   // FPS capping for terminal writes (Option C: Balanced)
@@ -521,6 +524,20 @@ export const TerminalCell = React.memo<TerminalCellProps>(({
       
       // Additional performance optimizations
       convertEol: true, // Reduce parsing overhead
+
+      // Enable scrolling in TUI applications (OpenCode, etc.)
+      // When terminal is in mouse mode (alternate buffer), Alt+click forces selection
+      // This allows scrolling even when TUI has mouse tracking enabled
+      macOptionClickForcesSelection: true,
+      
+      // Increase scroll sensitivity for better TUI scrolling experience
+      scrollSensitivity: 2,
+      
+      // Windows PTY configuration for better ConPTY behavior
+      // This helps with scrollback and TUI applications on Windows
+      windowsPty: {
+        backend: 'conpty',
+      },
     });
 
     const fitAddon = new FitAddon();
@@ -531,6 +548,48 @@ export const TerminalCell = React.memo<TerminalCellProps>(({
     term.loadAddon(webLinksAddon);
     term.loadAddon(searchAddon);
     term.open(containerRef.current);
+
+    // Track buffer state to detect TUI mode (alternate buffer)
+    let isInAlternateBuffer = false;
+    xtermDisposablesRef.current.onBufferChangeDisposable = term.buffer.onBufferChange((buffer) => {
+      isInAlternateBuffer = buffer.type === 'alternate';
+    });
+
+    // Custom wheel event handler to enable scrolling in TUI applications
+    // This allows mouse wheel to scroll even when TUI (like OpenCode) has mouse tracking enabled
+    let wheelHandlerRegistered = true;
+    term.attachCustomWheelEventHandler((event) => {
+      // Handler is no longer registered, don't process events
+      if (!wheelHandlerRegistered) return true;
+      
+      // When in alternate buffer (TUI mode), we need special handling
+      if (isInAlternateBuffer) {
+        const delta = event.deltaY;
+        const lines = Math.abs(delta) > 0 ? Math.max(1, Math.round(Math.abs(delta) / 40)) : 1;
+        
+        // Determine scroll direction and amount
+        if (delta < 0) {
+          // Scroll up - use Ctrl+Shift+Up to navigate history in TUI
+          // Or use terminal's scrollToLine to scroll the viewport
+          term.scrollLines(-lines);
+        } else if (delta > 0) {
+          // Scroll down
+          term.scrollLines(lines);
+        }
+        
+        // Return false to prevent the event from being sent to the PTY
+        // This stops the TUI from receiving mouse scroll events
+        return false;
+      }
+      
+      // In normal buffer, let xterm.js handle scrolling normally
+      return true;
+    });
+    
+    // Store cleanup function for wheel handler
+    xtermDisposablesRef.current.wheelHandlerCleanup = () => {
+      wheelHandlerRegistered = false;
+    };
     
     // Lazy load WebGL addon only when terminal becomes active to reduce startup memory
     // WebGL can use 50-100MB per instance for texture atlas and shaders
@@ -912,7 +971,19 @@ export const TerminalCell = React.memo<TerminalCellProps>(({
         xtermDisposablesRef.current.customKeyHandlerCleanup = undefined;
       }
 
+      // Cleanup custom wheel event handler
+      if (xtermDisposablesRef.current.wheelHandlerCleanup) {
 
+        xtermDisposablesRef.current.wheelHandlerCleanup();
+        xtermDisposablesRef.current.wheelHandlerCleanup = undefined;
+      }
+
+      // Dispose onBufferChange handler
+      if (xtermDisposablesRef.current.onBufferChangeDisposable) {
+
+        xtermDisposablesRef.current.onBufferChangeDisposable.dispose();
+        xtermDisposablesRef.current.onBufferChangeDisposable = undefined;
+      }
 
       // Dispose xterm.js terminal and all addons (VAL-MEM-004)
       // Dispose addons explicitly before terminal disposal for clarity

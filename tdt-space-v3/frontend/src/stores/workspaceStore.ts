@@ -205,6 +205,19 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => {
     },
 
     removeWorkspace: async (id) => {
+      // Kill all terminals in this workspace first
+      const state = get();
+      const workspace = state.workspaces.find(ws => ws.id === id);
+      if (workspace?.terminals) {
+        await Promise.all(
+          workspace.terminals.map(t => 
+            backendAPI.terminalKill(t.id).catch(err =>
+              console.error(`[WorkspaceStore] Failed to kill terminal ${t.id}:`, err)
+            )
+          )
+        );
+      }
+
       // Delete from backend first
       try {
         await backendAPI.deleteWorkspace(id);

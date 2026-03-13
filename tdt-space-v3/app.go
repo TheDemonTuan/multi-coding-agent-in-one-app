@@ -13,14 +13,14 @@ import (
 
 // App struct holds the application services.
 type App struct {
-	terminalSvc      *services.TerminalServiceImpl
-	storeSvc         *services.StoreServiceImpl
-	systemSvc        *services.SystemService
-	workspaceSvc     *services.WorkspaceService
-	templateSvc      *services.TemplateService
+	terminalSvc        *services.TerminalServiceImpl
+	storeSvc           *services.StoreServiceImpl
+	systemSvc          *services.SystemService
+	workspaceSvc       *services.WorkspaceService
+	templateSvc        *services.TemplateService
 	terminalHistorySvc *services.TerminalHistoryService
-	vietnameseIMESvc *services.VietnameseIMEService
-	app              *application.App
+	vietnameseIMESvc   *services.VietnameseIMEService
+	app                *application.App
 }
 
 // NewApp creates a new App with required services.
@@ -50,7 +50,7 @@ func (a *App) ServiceStartup(ctx context.Context, options application.ServiceOpt
 	// Get application instance using the global getter
 	app := application.Get()
 	a.app = app
-	
+
 	// Pass application to services that need to emit events
 	a.terminalSvc.SetApplication(app)
 	a.systemSvc.SetApplication(app)
@@ -61,6 +61,13 @@ func (a *App) ServiceStartup(ctx context.Context, options application.ServiceOpt
 // ServiceShutdown is called when the app shuts down.
 // This is a Wails v3 Service lifecycle method.
 func (a *App) ServiceShutdown() error {
+	log.Printf("[INFO] ServiceShutdown: cleaning up all terminals")
+
+	// Cleanup all terminals to ensure child processes are killed
+	if a.terminalSvc != nil {
+		a.terminalSvc.CleanupAllTerminals()
+	}
+
 	log.Printf("[INFO] ServiceShutdown: starting store close")
 
 	// Close the store to ensure all data is persisted

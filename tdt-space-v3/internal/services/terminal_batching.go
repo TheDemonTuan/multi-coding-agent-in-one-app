@@ -19,11 +19,9 @@ import (
 // ============================================================================
 
 const (
-	batchFlushInterval  = 16 * time.Millisecond // ~60fps - optimized for scroll stability
-	batchMaxSize        = 8192                  // bytes - smaller chunks for more frequent flushes
-	maxBufferedDataSize = 512 * 1024            // 512KB max buffered data
-	// minFlushInterval removed - was duplicate of batchFlushInterval (both 16ms)
-
+	batchFlushInterval  = 16 * time.Millisecond // ~60fps - standard terminal refresh rate
+	batchMaxSize        = 32768                 // 32KB - larger for TUI burst output
+	maxBufferedDataSize = 1024 * 1024           // 1MB max buffered data for TUI apps
 	// Background workspace optimization
 	backgroundBufferMaxSize = 256 * 1024       // 256KB max for background terminals
 	backgroundBufferTTL     = 30 * time.Second // TTL for background buffered data

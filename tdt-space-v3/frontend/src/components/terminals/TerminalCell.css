@@ -209,7 +209,7 @@
   display: flex;
   flex-direction: column;
   flex: 1;
-  padding: 2px;
+  padding: 0;
   min-height: 100px;
   position: relative;
   transition: background-color 0.2s ease;
@@ -218,6 +218,18 @@
 
 .terminal-canvas-area.drag-over {
   background-color: var(--tc-drag-overlay-bg);
+}
+
+/* WebGL loading transition - prevents visual jank when switching from Canvas to WebGL renderer */
+.terminal-canvas-area.webgl-loading {
+  position: relative;
+}
+
+/* Hide terminal content during WebGL initialization to prevent resize jank */
+.terminal-canvas-area.webgl-loading .xterm-screen,
+.terminal-canvas-area.webgl-loading .xterm-rows {
+  opacity: 0;
+  transition: opacity 0.08s ease-out;
 }
 
 /* ─── Drag Overlay ───────────────────────────────────────────────────────── */

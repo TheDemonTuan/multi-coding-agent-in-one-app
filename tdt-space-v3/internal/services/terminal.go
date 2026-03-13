@@ -28,21 +28,22 @@ type pendingEvent struct {
 
 // ptyProcess wraps a PTY with its associated metadata.
 type ptyProcess struct {
-	id         string
-	pty        *platform.PTYHandle
-	cmd        *exec.Cmd // nil on Windows (ConPTY manages the process)
-	cancelFunc context.CancelFunc
-	batcher    *terminalBatcher
+	id          string
+	pty         *platform.PTYHandle
+	cmd         *exec.Cmd // nil on Windows (ConPTY manages the process)
+	cancelFunc  context.CancelFunc
+	batcher     *terminalBatcher
+	workspaceID string // workspace this terminal belongs to
 }
 
 // TerminalServiceImpl manages all PTY processes.
 type TerminalServiceImpl struct {
-	app              *application.App
-	mu               sync.RWMutex
-	processes        map[string]*ptyProcess
-	pendingEvents    []pendingEvent // Queue for events when context is nil
-	eventsMu         sync.RWMutex     // Protects pendingEvents
-	shuttingDown     bool           // NEW: flag to indicate shutdown in progress
+	app           *application.App
+	mu            sync.RWMutex
+	processes     map[string]*ptyProcess
+	pendingEvents []pendingEvent // Queue for events when context is nil
+	eventsMu      sync.RWMutex   // Protects pendingEvents
+	shuttingDown  bool           // NEW: flag to indicate shutdown in progress
 
 	// Workspace active state tracking (Option C: Hybrid background optimization)
 	workspaceActiveMu sync.RWMutex
@@ -146,7 +147,7 @@ func (t *TerminalServiceImpl) SpawnTerminal(opts SpawnTerminalOptions) SpawnResu
 		Command: shell,
 		Args:    shellArgs,
 		Dir:     cwd,
-		Env:     buildEnv(opts.ID),
+		Env:     buildEnv(opts.ID, ""),
 		Cols:    uint16(cols),
 		Rows:    uint16(rows),
 	})
@@ -168,10 +169,11 @@ func (t *TerminalServiceImpl) SpawnTerminal(opts SpawnTerminalOptions) SpawnResu
 		batcher.SetActive(t.IsWorkspaceActive(opts.WorkspaceID))
 	}
 	proc := &ptyProcess{
-		id:         opts.ID,
-		pty:        handle,
-		cancelFunc: cancel,
-		batcher:    batcher,
+		id:          opts.ID,
+		pty:         handle,
+		cancelFunc:  cancel,
+		batcher:     batcher,
+		workspaceID: opts.WorkspaceID,
 	}
 
 	t.mu.Lock()
@@ -244,7 +246,7 @@ func (t *TerminalServiceImpl) SpawnTerminalWithAgent(opts SpawnAgentOptions) Spa
 		Command: agentCmd,
 		Args:    agentArgs,
 		Dir:     cwd,
-		Env:     buildEnv(opts.ID),
+		Env:     buildEnv(opts.ID, opts.AgentType),
 		Cols:    uint16(cols),
 		Rows:    uint16(rows),
 	})
@@ -276,10 +278,11 @@ func (t *TerminalServiceImpl) SpawnTerminalWithAgent(opts SpawnAgentOptions) Spa
 		batcher.SetActive(t.IsWorkspaceActive(opts.WorkspaceID))
 	}
 	proc := &ptyProcess{
-		id:         opts.ID,
-		pty:        handle,
-		cancelFunc: cancel,
-		batcher:    batcher,
+		id:          opts.ID,
+		pty:         handle,
+		cancelFunc:  cancel,
+		batcher:     batcher,
+		workspaceID: opts.WorkspaceID,
 	}
 
 	t.mu.Lock()
@@ -363,11 +366,17 @@ func (t *TerminalServiceImpl) CleanupAllTerminals() CleanupResult {
 		wg.Add(1)
 		go func(id string) {
 			defer wg.Done()
-			t.killProcess(id)
+			log.Printf("[INFO] CleanupAllTerminals: killing terminal %s", id)
+			err := t.killProcess(id)
+			if err != nil {
+				log.Printf("[ERROR] CleanupAllTerminals: failed to kill terminal %s: %v", id, err)
+			} else {
+				log.Printf("[INFO] CleanupAllTerminals: successfully killed terminal %s", id)
+			}
 		}(id)
 	}
 
-	// Wait with timeout
+	// Wait with timeout - increased to 10s for process tree killing
 	done := make(chan struct{})
 	go func() {
 		wg.Wait()
@@ -376,8 +385,8 @@ func (t *TerminalServiceImpl) CleanupAllTerminals() CleanupResult {
 	select {
 	case <-done:
 		log.Printf("[INFO] CleanupAllTerminals: all terminals cleaned up")
-	case <-time.After(5 * time.Second):
-		log.Printf("[WARN] CleanupAllTerminals timed out after 5s")
+	case <-time.After(10 * time.Second):
+		log.Printf("[WARN] CleanupAllTerminals timed out after 10s, some processes may still be running")
 	}
 
 	return CleanupResult{Success: true, Cleaned: ids}
@@ -407,8 +416,8 @@ func (t *TerminalServiceImpl) GetTerminalStatus(id string) map[string]interface{
 func (t *TerminalServiceImpl) CleanupWorkspaceTerminals(workspaceID string) CleanupResult {
 	t.mu.Lock()
 	var toKill []string
-	for id := range t.processes {
-		if strings.HasPrefix(id, workspaceID+"-") || strings.Contains(id, workspaceID) {
+	for id, proc := range t.processes {
+		if proc.workspaceID == workspaceID {
 			toKill = append(toKill, id)
 		}
 	}
@@ -417,6 +426,12 @@ func (t *TerminalServiceImpl) CleanupWorkspaceTerminals(workspaceID string) Clea
 	for _, id := range toKill {
 		t.killProcess(id)
 	}
+
+	// Clean up workspace active state tracking
+	t.workspaceActiveMu.Lock()
+	delete(t.workspaceActive, workspaceID)
+	t.workspaceActiveMu.Unlock()
+
 	return CleanupResult{Success: true, Cleaned: toKill}
 }
 
@@ -455,33 +470,34 @@ func (t *TerminalServiceImpl) killProcess(id string) error {
 		log.Printf("[WARN] PTY.Close() timed out for terminal %s", id)
 	}
 
-	// Skip KillProcessTree during shutdown - ConPTY Close() handles it
-	if !shuttingDown {
-		// For Unix, we also have proc.cmd; ConPTY manages its own process.
-		if proc.cmd != nil && proc.cmd.Process != nil {
-			platform.KillProcessTree(proc.cmd.Process.Pid)
+	// Always kill process tree - ConPTY's Close() does NOT kill child processes
+	// This is critical for proper cleanup when app closes
+	if proc.cmd != nil && proc.cmd.Process != nil {
+		log.Printf("[INFO] Killing process tree via cmd.Process.Pid: %d", proc.cmd.Process.Pid)
+		platform.KillProcessTree(proc.cmd.Process.Pid)
 
-			done := make(chan struct{})
-			go func() {
-				proc.cmd.Wait()
-				close(done)
-			}()
-			select {
-			case <-done:
-			case <-time.After(3 * time.Second):
-			}
-		} else if proc.pty.Pid > 0 {
-			platform.KillProcessTree(proc.pty.Pid)
+		done := make(chan struct{})
+		go func() {
+			proc.cmd.Wait()
+			close(done)
+		}()
+		select {
+		case <-done:
+		case <-time.After(3 * time.Second):
+			log.Printf("[WARN] proc.cmd.Wait() timed out for terminal %s", id)
 		}
+	} else if proc.pty.Pid > 0 {
+		log.Printf("[INFO] Killing process tree via pty.Pid: %d (ConPTY)", proc.pty.Pid)
+		platform.KillProcessTree(proc.pty.Pid)
 	}
 
 	return nil
 }
 
 func (t *TerminalServiceImpl) readPTYOutput(ctx context.Context, proc *ptyProcess) {
-	// Increased buffer size for better handling of large output bursts
-	// This helps prevent text scrambling when ConPTY sends large chunks
-	buf := make([]byte, 16384)
+	// Large buffer for TUI apps like Bubble Tea (opencode, codex)
+	// These apps send bursts of escape sequences that need large buffer
+	buf := make([]byte, 65536)
 	for {
 		select {
 		case <-ctx.Done():
@@ -496,10 +512,18 @@ func (t *TerminalServiceImpl) readPTYOutput(ctx context.Context, proc *ptyProces
 			proc.batcher.write(data)
 		}
 		if err != nil {
-			// PTY closed, process has exited - emit terminal-exit
+			// Process exited naturally — remove from map only if still present
+			// (killProcess may have already removed it)
 			t.mu.Lock()
-			delete(t.processes, proc.id)
+			_, stillExists := t.processes[proc.id]
+			if stillExists {
+				delete(t.processes, proc.id)
+			}
 			t.mu.Unlock()
+
+			if !stillExists {
+				return // Already cleaned up by killProcess, skip exit event
+			}
 
 			// Emit terminal-exit event (queued if context not yet available)
 			t.emitEvent("terminal-exit", TerminalExitEvent{
@@ -536,7 +560,7 @@ func resolveCWD(cwd string) string {
 	return cwd
 }
 
-func buildEnv(terminalID string) []string {
+func buildEnv(terminalID string, agentType string) []string {
 	env := os.Environ()
 
 	// Use xterm-256color on all platforms for better escape sequence support
@@ -549,7 +573,9 @@ func buildEnv(terminalID string) []string {
 		"TDT_TERMINAL_ID="+terminalID,
 		"LC_ALL=C.UTF-8",
 		"LANG=en_US.UTF-8",
+		"CLICOLOR=1",
 	)
+
 	return filterEnv(env, "TERM_PROGRAM")
 }
 
@@ -603,14 +629,14 @@ func resolveAgentCommand(agentType, overrideCmd string, extraArgs []string) (str
 // Helps users install missing agents with a single copy-paste command.
 func getAgentInstallCommand(agentType, agentCmd string) string {
 	installs := map[string]string{
-		"claude-code":  "bun install -g @anthropics/claude-code",
-		"opencode":     "bun install -g opencode-ai",
-		"droid":        "bun install -g @droid/cli",
-		"gemini-cli":   "npm install -g @anthropic-ai/gemini-cli",
-		"aider":        "pip install aider-chat",
-		"codex":        "npm install -g codex",
-		"amp":          "npm install -g @amp/cli",
-		"continue":     "npm install -g continue",
+		"claude-code": "bun install -g @anthropics/claude-code",
+		"opencode":    "bun install -g opencode-ai",
+		"droid":       "bun install -g @droid/cli",
+		"gemini-cli":  "npm install -g @anthropic-ai/gemini-cli",
+		"aider":       "pip install aider-chat",
+		"codex":       "npm install -g codex",
+		"amp":         "npm install -g @amp/cli",
+		"continue":    "npm install -g continue",
 	}
 	if cmd, ok := installs[agentType]; ok {
 		return cmd

@@ -78,6 +78,9 @@ func appendUTF8Env(env []string) []string {
 	env = append(env,
 		"PYTHONIOENCODING=utf-8",
 		"PYTHONUTF8=1",
+		"LESSCHARSET=utf-8",
+		// Force Virtual Terminal Processing for better escape sequence handling
+		"ENABLE_VIRTUAL_TERMINAL_PROCESSING=1",
 	)
 
 	return env

@@ -233,6 +233,26 @@ export const WorkspaceCreationModal: React.FC<WorkspaceCreationModalProps> = ({
     }
   };
 
+  const syncSlotAssignments = (newAllocation: AgentAllocation) => {
+    const newSlotAssignments: Record<number, AgentType | null> = {};
+    let slotIndex = 0;
+
+    for (let i = 0; i < agentTypeInfo.length; i++) {
+      const agentType = agentTypeInfo[i].type;
+      const key = agentAllocationKeys[agentType];
+      const count = key ? newAllocation[key] : 0;
+      for (let j = 0; j < count && slotIndex < totalTerminals; j++) {
+        newSlotAssignments[slotIndex++] = agentType;
+      }
+    }
+
+    while (slotIndex < totalTerminals) {
+      newSlotAssignments[slotIndex++] = null;
+    }
+
+    setSlotAssignments(newSlotAssignments);
+  };
+
   const handleAgentChange = (agentType: AgentType, delta: number) => {
     if (delta === 0) return;
     
@@ -243,7 +263,12 @@ export const WorkspaceCreationModal: React.FC<WorkspaceCreationModalProps> = ({
       const currentValue = prev[key];
       const maxAvailable = totalTerminals - (allocatedCount - currentValue);
       const newValue = Math.max(0, Math.min(maxAvailable, currentValue + delta));
-      return { ...prev, [key]: newValue };
+      
+      if (newValue === currentValue) return prev;
+      
+      const newAllocation = { ...prev, [key]: newValue };
+      syncSlotAssignments(newAllocation);
+      return newAllocation;
     });
   };
 
@@ -253,10 +278,11 @@ export const WorkspaceCreationModal: React.FC<WorkspaceCreationModalProps> = ({
 
     setAgentAllocation(prev => {
       const currentValue = prev[key];
-      const otherAgentsCount = allocatedCount - currentValue;
-      const maxAvailable = totalTerminals - otherAgentsCount;
-      const newValue = Math.max(0, Math.min(maxAvailable, value));
-      return { ...prev, [key]: newValue };
+      if (value === currentValue) return prev;
+      
+      const newAllocation = { ...prev, [key]: Math.max(0, Math.min(totalTerminals, value)) };
+      syncSlotAssignments(newAllocation);
+      return newAllocation;
     });
   };
 

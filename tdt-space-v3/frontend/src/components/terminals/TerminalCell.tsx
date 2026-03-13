@@ -4,6 +4,7 @@ import { FitAddon } from '@xterm/addon-fit';
 import { WebLinksAddon } from '@xterm/addon-web-links';
 import { SearchAddon } from '@xterm/addon-search';
 import { WebglAddon } from '@xterm/addon-webgl';
+import { ClipboardAddon } from '@xterm/addon-clipboard';
 import '@xterm/xterm/css/xterm.css';
 import './TerminalCell.css';
 import { TerminalPane, AgentType } from '../../types/workspace';
@@ -120,12 +121,11 @@ export const TerminalCell = React.memo<TerminalCellProps>(({
   // Fix 2: Flag to ignore events during agent switch
   const isSwitchingAgentRef = useRef<boolean>(false);
 
-  // Fix 3: Track previous active state to prevent aggressive scroll-to-bottom
+  // Track previous active state to prevent aggressive scroll-to-bottom
   const wasPreviouslyActiveRef = useRef<boolean>(false);
 
-  // Performance tracking for conditional WebGL (Option C: Balanced)
-  const totalDataReceivedRef = useRef<number>(0);
-  const webglLoadAttemptedRef = useRef<boolean>(false);
+  // Simple direct write - backend batching handles flow control
+  const userScrolledUpRef = useRef<boolean>(false);
 
   // Actions — stable references in Zustand, destructuring is fine here
   const { restartTerminal, getNextWorkspace, getPreviousWorkspace, setCurrentWorkspace, switchTerminalAgent } = useWorkspaceStore();
@@ -149,24 +149,14 @@ export const TerminalCell = React.memo<TerminalCellProps>(({
     onScrollDisposable?: { dispose(): void };
     // attachCustomKeyEventHandler returns void, so we store a cleanup flag instead
     customKeyHandlerCleanup?: () => void;
+    wheelHandlerCleanup?: () => void;
   }>({});
 
-  // FPS capping for terminal writes - Optimized for scroll stability
-  // Limit to max 60 writes/sec for smoother output while preventing overwhelm
-  const MAX_WRITES_PER_SECOND = 60;
-  const MAX_PENDING_BUFFER_CHARS = 50000; // ~50KB max buffer to prevent memory bloat
-  const pendingWriteBufferRef = useRef<string[]>([]);
-  const pendingBufferSizeRef = useRef<number>(0); // Track total chars for O(1) size check
-  const lastWriteTimeRef = useRef<number>(0);
-  const writeTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const writeInProgressRef = useRef<boolean>(false);
-  const userScrolledUpRef = useRef<boolean>(false);
-  const lastScrollYRef = useRef<number>(0);
-  // Circular buffer for O(1) timestamp tracking instead of O(n) filter
-  const writeTimestampsRef = useRef<number[]>(new Array(60).fill(0));
-  const timestampIndexRef = useRef<number>(0);
-
-
+  // Write queue per terminal to prevent out-of-order delivery during IME composition
+  const writeQueueRef = useRef<{ queue: string[]; flushing: boolean }>({
+    queue: [],
+    flushing: false
+  });
 
   const [hasStarted, setHasStarted] = useState(false);
 
@@ -224,6 +214,36 @@ export const TerminalCell = React.memo<TerminalCellProps>(({
     }
   }, [terminal.agent?.type]);
 
+  // Write queue functions to prevent out-of-order delivery during IME composition
+  const flushWriteQueue = useCallback(async () => {
+    const wq = writeQueueRef.current;
+    if (wq.flushing) return;
+    wq.flushing = true;
+
+    while (wq.queue.length > 0) {
+      // Batch all pending writes into a single call
+      const batch = wq.queue.splice(0).join('');
+      if (batch) {
+        await backendAPI.terminalWrite(terminal.id, batch);
+      }
+    }
+    wq.flushing = false;
+  }, [terminal.id]);
+
+  const BRACKETED_PASTE_START = '\x1b[200~';
+const BRACKETED_PASTE_END = '\x1b[201~';
+
+const pasteToTerminal = useCallback((text: string) => {
+  if (!text) return;
+  const wrapped = BRACKETED_PASTE_START + text + BRACKETED_PASTE_END;
+  backendAPI.terminalWrite(terminal.id, wrapped);
+}, [terminal.id]);
+
+const queuedWrite = useCallback((data: string) => {
+    writeQueueRef.current.queue.push(data);
+    flushWriteQueue();
+  }, [flushWriteQueue]);
+
   const handleContextMenu = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
@@ -252,7 +272,7 @@ export const TerminalCell = React.memo<TerminalCellProps>(({
       case 'paste':
         if (terminalRef.current) {
           navigator.clipboard.readText().then((text) => {
-            backendAPI.terminalWrite(terminal.id, text);
+            pasteToTerminal(text);
           });
         }
         break;
@@ -326,7 +346,7 @@ export const TerminalCell = React.memo<TerminalCellProps>(({
         switchTerminalAgent(terminal.id, 'none');
         break;
     }
-  }, [onSplit, onClose, terminal.id, restartTerminal, currentWorkspace, switchTerminalAgent]);
+  }, [onSplit, onClose, terminal.id, restartTerminal, currentWorkspace, switchTerminalAgent, pasteToTerminal]);
 
   const handleScrollToBottom = useCallback(() => {
     if (terminalRef.current) {
@@ -348,12 +368,6 @@ export const TerminalCell = React.memo<TerminalCellProps>(({
     const viewportY = buffer.viewportY;
     const baseY = buffer.baseY;
     const rows = terminalRef.current.rows;
-
-    // Update user scroll state - only true if scrolled up significantly (more than 3 lines)
-    const scrollThreshold = 3;
-    const isScrolledUp = viewportY < baseY - rows - scrollThreshold;
-    userScrolledUpRef.current = isScrolledUp;
-    lastScrollYRef.current = viewportY;
 
     // Check if at bottom
     const isAtBottom = viewportY >= baseY - rows;
@@ -533,44 +547,31 @@ export const TerminalCell = React.memo<TerminalCellProps>(({
       containerRef.current.innerHTML = '';
     }
 
-    // Optimized terminal options for better performance (VAL-PERF-008)
+    // Standard terminal config for normal OS-like behavior
     const term = new Terminal({
       cursorBlink: true,
       fontSize: 14,
       fontFamily: '"Cascadia Code", "Fira Code", Consolas, "Courier New", monospace',
       allowProposedApi: true,
-      // Configure scrollback buffer - reduced for better scroll performance
-      scrollback: 100, // Reduced from 300 to prevent scroll jitter and memory bloat
+      scrollback: 5000,
 
       // Theme applied immediately to prevent white text on first load
       theme: theme === 'dark' ? DARK_THEME : LIGHT_THEME,
 
-      // Performance optimizations (VAL-PERF-008)
-      drawBoldTextInBrightColors: false, // Disable to reduce rendering overhead
-      minimumContrastRatio: 1, // Skip contrast recalculation for performance
-
-      // Smooth scrolling - completely disabled to prevent jitter
-      fastScrollSensitivity: 20, // Higher sensitivity for responsive scroll
-      smoothScrollDuration: 0, // Must be 0 to disable smooth scroll animation
-
-      // Windows/ConPTY specific fixes to prevent text duplication/scrambling
-      macOptionIsMeta: false,
-      // Better handling of wide characters (CJK, emoji)
-      allowTransparency: false,
-
-      // Additional performance optimizations
-      convertEol: true, // Reduce parsing overhead
-      cursorStyle: 'block', // Consistent cursor style
-      letterSpacing: 0, // Prevent text measurement issues
+      // Standard terminal behavior - let xterm.js use defaults
+      cursorStyle: 'block',
+      letterSpacing: 0,
     });
 
     const fitAddon = new FitAddon();
     const webLinksAddon = new WebLinksAddon();
     const searchAddon = new SearchAddon();
+    const clipboardAddon = new ClipboardAddon();
 
     term.loadAddon(fitAddon);
     term.loadAddon(webLinksAddon);
     term.loadAddon(searchAddon);
+    term.loadAddon(clipboardAddon);
     term.open(containerRef.current);
     
     // Lazy load WebGL addon only when terminal becomes active to reduce startup memory
@@ -667,100 +668,9 @@ export const TerminalCell = React.memo<TerminalCellProps>(({
 
     // Setup event listeners (VAL-MEM-003)
 
-    // Helper: Restore scroll position after write if user was reading history
-    const restoreScrollPosition = (wasScrolledUp: boolean, savedScrollY: number, callback?: () => void) => {
-      if (!wasScrolledUp || savedScrollY <= 0) {
-        writeInProgressRef.current = false;
-        if (callback) callback();
-        return;
-      }
-      requestAnimationFrame(() => {
-        if (terminalRef.current) {
-          terminalRef.current.scrollToLine(savedScrollY);
-        }
-        writeInProgressRef.current = false;
-        if (callback) callback();
-      });
-    };
-
-    // Optimized rate-limited terminal write with scroll stability fixes
-    // Uses circular buffer for O(1) timestamp tracking instead of O(n) filter
-    const writeWithRateLimit = (data: string) => {
-      if (!terminalRef.current || writeInProgressRef.current) return;
-
-      const now = Date.now();
-      const timestamps = writeTimestampsRef.current;
-      const idx = timestampIndexRef.current;
-
-      // Count recent writes (within last second) using circular buffer
-      let recentWrites = 0;
-      for (let i = 0; i < timestamps.length; i++) {
-        if (now - timestamps[i] < 1000) {
-          recentWrites++;
-        }
-      }
-
-      // Check if we're over the rate limit
-      if (recentWrites >= MAX_WRITES_PER_SECOND) {
-        // Buffer the data for batch processing with size limit
-        const dataLen = data.length;
-        if (pendingBufferSizeRef.current + dataLen > MAX_PENDING_BUFFER_CHARS) {
-          // Drop oldest 20% of buffer to make room
-          const dropCount = Math.ceil(pendingWriteBufferRef.current.length * 0.2);
-          let droppedChars = 0;
-          for (let i = 0; i < dropCount && pendingWriteBufferRef.current.length > 0; i++) {
-            droppedChars += pendingWriteBufferRef.current[0].length;
-            pendingWriteBufferRef.current.shift();
-          }
-          pendingBufferSizeRef.current -= droppedChars;
-        }
-        pendingWriteBufferRef.current.push(data);
-        pendingBufferSizeRef.current += dataLen;
-
-        // Schedule drain if not already scheduled
-        if (!writeTimeoutRef.current) {
-          writeTimeoutRef.current = setTimeout(() => {
-            if (!terminalRef.current) return;
-
-            writeTimeoutRef.current = null;
-            writeInProgressRef.current = true;
-
-            // Batch all pending data into single write
-            const buffered = pendingWriteBufferRef.current.join('');
-            pendingWriteBufferRef.current = [];
-            pendingBufferSizeRef.current = 0;
-
-            if (buffered) {
-              const wasScrolledUp = userScrolledUpRef.current;
-              const savedScrollY = lastScrollYRef.current;
-              terminalRef.current.write(buffered);
-              restoreScrollPosition(wasScrolledUp, savedScrollY);
-            } else {
-              writeInProgressRef.current = false;
-            }
-          }, 16); // ~60fps timing
-        }
-        return;
-      }
-
-      // Record this write timestamp using circular buffer
-      timestamps[idx] = now;
-      timestampIndexRef.current = (idx + 1) % timestamps.length;
-      writeInProgressRef.current = true;
-
-      // Remember scroll state before write
-      const wasScrolledUp = userScrolledUpRef.current;
-      const savedScrollY = lastScrollYRef.current;
-
-      // Single write operation
-      terminalRef.current.write(data);
-
-      // Restore scroll position if needed
-      restoreScrollPosition(wasScrolledUp, savedScrollY);
-    };
-
+    // Simple direct write - backend batching handles flow control
     listenersRef.current.unsubscribeData = backendAPI.onTerminalData((event: { terminalId: string; data: string }) => {
-      // Fix 2: Ignore events during agent switch to prevent race conditions
+      // Ignore events during agent switch to prevent race conditions
       if (isSwitchingAgentRef.current) {
         return;
       }
@@ -770,9 +680,6 @@ export const TerminalCell = React.memo<TerminalCellProps>(({
       }
       
       let outputData = event.data;
-      
-      // Track total data received for WebGL conditional loading (Option C)
-      totalDataReceivedRef.current += outputData.length;
       
       // Parse OSC 133 shell integration markers if present
       const hasOSC = outputData.includes('\x1b]133;');
@@ -790,10 +697,10 @@ export const TerminalCell = React.memo<TerminalCellProps>(({
         return;
       }
       
-      // Use rate-limited write (Option C: FPS capping)
-      writeWithRateLimit(outputData);
+      // Direct write - no rate limiting needed, backend batching handles flow control
+      terminalRef.current.write(outputData);
 
-      // Fix: Correct scroll position formula for unread count tracking
+      // Update unread count if scrolled up
       const buffer = terminalRef.current.buffer.active;
       if (buffer.viewportY < buffer.baseY - terminalRef.current.rows) {
         setUnreadCount((prev: number) => prev + 1);
@@ -840,7 +747,7 @@ export const TerminalCell = React.memo<TerminalCellProps>(({
 
     // Store onData handler disposable (VAL-MEM-004)
     xtermDisposablesRef.current.onDataDisposable = term.onData((data: string) => {
-      backendAPI.terminalWrite(terminal.id, data);
+      queuedWrite(data);
     });
 
 
@@ -924,7 +831,7 @@ export const TerminalCell = React.memo<TerminalCellProps>(({
       if ((e.ctrlKey || e.metaKey) && e.key === 'v') {
         e.preventDefault();
         navigator.clipboard.readText().then((text) => {
-          backendAPI.terminalWrite(terminal.id, text);
+          pasteToTerminal(text);
         });
         return false;
       }
@@ -936,6 +843,8 @@ export const TerminalCell = React.memo<TerminalCellProps>(({
     xtermDisposablesRef.current.customKeyHandlerCleanup = () => {
       customKeyHandlerRegistered = false;
     };
+
+    // Wheel handler is now registered in separate useEffect with proper dependencies
 
     return () => {
 
@@ -950,20 +859,8 @@ export const TerminalCell = React.memo<TerminalCellProps>(({
         fitDebounceRef.current = null;
       }
 
-      // Clear write timeout and pending buffer
-      if (writeTimeoutRef.current) {
-        clearTimeout(writeTimeoutRef.current);
-        writeTimeoutRef.current = null;
-      }
       // Cancel the debounced function
       debouncedSetUnreadCount.cancel();
-
-      pendingWriteBufferRef.current = [];
-      pendingBufferSizeRef.current = 0;
-      // Reset circular buffer timestamps instead of empty array
-      writeTimestampsRef.current.fill(0);
-      timestampIndexRef.current = 0;
-      writeInProgressRef.current = false;
 
       // Disconnect ResizeObserver to prevent layout observation after unmount
       if (resizeObserverRef.current) {
@@ -1018,6 +915,12 @@ export const TerminalCell = React.memo<TerminalCellProps>(({
 
         xtermDisposablesRef.current.customKeyHandlerCleanup();
         xtermDisposablesRef.current.customKeyHandlerCleanup = undefined;
+      }
+
+      // Cleanup custom wheel event handler
+      if (xtermDisposablesRef.current.wheelHandlerCleanup) {
+        xtermDisposablesRef.current.wheelHandlerCleanup();
+        xtermDisposablesRef.current.wheelHandlerCleanup = undefined;
       }
 
 
@@ -1102,28 +1005,121 @@ export const TerminalCell = React.memo<TerminalCellProps>(({
     }
   }, [theme]);
 
-    // Lazy load WebGL addon when terminal becomes active - Option C: Conditional loading
-    // WebGL is now loaded on-demand based on data volume to reduce memory overhead
-    useEffect(() => {
-      if (isActive && terminalRef.current && !webglAddonRef.current && !webglLoadAttemptedRef.current) {
-        // Only attempt WebGL load if terminal has received significant data (>10KB)
-        // This prevents unnecessary WebGL overhead for light terminal usage
-        if (totalDataReceivedRef.current > 10 * 1024) {
-          webglLoadAttemptedRef.current = true;
-          try {
-            const webglAddon = new WebglAddon();
-            webglAddon.onContextLoss(() => {
-              webglAddon.dispose();
-              webglAddonRef.current = null;
-            });
-            terminalRef.current.loadAddon(webglAddon);
-            webglAddonRef.current = webglAddon;
-          } catch (err) {
-            // WebGL not available or failed to load, fallback to Canvas renderer
-          }
+  // Register custom wheel event handler for TUI apps (opencode, codex, etc.)
+  // Separate useEffect with proper dependencies to re-register when agent changes
+  useEffect(() => {
+    if (!terminalRef.current) return;
+    
+    const term = terminalRef.current;
+    // Enable for ALL terminals — logic already checks isAlternateBuffer inside
+    const isWheelForwardingEnabled = true;
+    
+    if (!isWheelForwardingEnabled) {
+      // Clear cleanup ref if wheel forwarding is disabled
+      xtermDisposablesRef.current.wheelHandlerCleanup = undefined;
+      return;
+    }
+    
+    let customWheelHandlerRegistered = true;
+    
+    term.attachCustomWheelEventHandler((event: WheelEvent) => {
+      if (!customWheelHandlerRegistered) return true;
+
+      // Only intercept if terminal is in alternate buffer (TUI mode)
+      const isAlternateBuffer = term.buffer.active.type === 'alternate';
+
+      if (isAlternateBuffer) {
+        // Prevent xterm.js from handling the wheel event
+        event.preventDefault();
+        event.stopPropagation();
+
+        // Convert wheel delta to number of scroll lines
+        const delta = event.deltaY;
+        const scrollLines = Math.max(1, Math.abs(Math.round(delta / 30)));
+
+        // SGR mouse wheel: button 64=scroll up, 65=scroll down (1-based coords)
+        const button = delta > 0 ? 65 : 64;
+        // SGR extended mouse uses 1-based coordinates
+        const col = Math.max(1, Math.min(Math.floor(term.cols / 2) + 1, term.cols));
+        const row = Math.max(1, Math.min(Math.floor(term.rows / 2) + 1, term.rows));
+        for (let i = 0; i < scrollLines; i++) {
+          // Send both press (M) and release (m) for SGR extended mode
+          queuedWrite(`\x1b[<${button};${col};${row}M`);
+          queuedWrite(`\x1b[<${button};${col};${row}m`);
         }
+
+        return false; // Prevent default xterm.js scroll handling
       }
-    }, [isActive, terminal.id]);
+
+      // In normal buffer, let xterm.js handle scrolling normally
+      return true;
+    });
+
+    // Store cleanup function
+    xtermDisposablesRef.current.wheelHandlerCleanup = () => {
+      customWheelHandlerRegistered = false;
+    };
+    
+    return () => {
+      customWheelHandlerRegistered = false;
+      xtermDisposablesRef.current.wheelHandlerCleanup = undefined;
+    };
+  }, [terminal.agent?.enabled, terminal.agent?.type, terminal.id, queuedWrite]);
+
+    // Track if WebGL has been loaded (once per terminal lifetime)
+  const hasWebGLLoadedRef = useRef(false);
+  // Track WebGL loading state for smooth transition
+  const [isWebGLLoading, setIsWebGLLoading] = useState(false);
+
+  // Load WebGL addon when terminal becomes active for better performance
+  // Only load once per terminal lifetime (cách 3: chỉ load 1 lần)
+  useEffect(() => {
+    if (isActive && terminalRef.current && !hasWebGLLoadedRef.current && !isWebGLLoading) {
+      setIsWebGLLoading(true);
+      
+      // Delay WebGL loading slightly to let the focus transition complete
+      // This reduces the visual jank (cách 2: smooth transition)
+      const loadTimer = setTimeout(() => {
+        try {
+          const webglAddon = new WebglAddon();
+          webglAddon.onContextLoss(() => {
+            webglAddon.dispose();
+            webglAddonRef.current = null;
+            hasWebGLLoadedRef.current = false;
+          });
+          terminalRef.current!.loadAddon(webglAddon);
+          webglAddonRef.current = webglAddon;
+          hasWebGLLoadedRef.current = true;
+
+          // CRITICAL: WebGL addon changes cell metrics (different from Canvas renderer).
+          // Must re-fit terminal after WebGL loads to recalculate cols/rows,
+          // otherwise TUI apps (OpenCode, Codex, etc.) will render with wrong width.
+          // Use double requestAnimationFrame for smoother transition
+          requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+              if (fitAddonRef.current && terminalRef.current) {
+                fitAddonRef.current.fit();
+                const { cols, rows } = terminalRef.current;
+                if (!lastDimensionsRef.current ||
+                  lastDimensionsRef.current.cols !== cols ||
+                  lastDimensionsRef.current.rows !== rows) {
+                  lastDimensionsRef.current = { cols, rows };
+                  backendAPI.terminalResize(terminal.id, cols, rows);
+                }
+              }
+              // Fade out loading state after resize is complete
+              setTimeout(() => setIsWebGLLoading(false), 50);
+            });
+          });
+        } catch (err) {
+          // WebGL not available or failed to load, fallback to Canvas renderer
+          setIsWebGLLoading(false);
+        }
+      }, 150); // Small delay to let focus transition settle
+
+      return () => clearTimeout(loadTimer);
+    }
+  }, [isActive, terminal.id, isWebGLLoading]);
 
   // Spawn terminal when workspace becomes active and terminal hasn't started yet
   // This handles cases where:
@@ -1291,7 +1287,7 @@ export const TerminalCell = React.memo<TerminalCellProps>(({
 
       <div
         ref={containerRef}
-        className={`terminal-canvas-area${isDragOver ? ' drag-over' : ''}`}
+        className={`terminal-canvas-area${isDragOver ? ' drag-over' : ''}${isWebGLLoading ? ' webgl-loading' : ''}`}
       >
         {isDragOver && (
           <div className="terminal-drag-overlay">
