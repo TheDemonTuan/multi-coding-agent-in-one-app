@@ -223,7 +223,7 @@ func (t *TerminalServiceImpl) SpawnTerminalWithAgent(opts SpawnAgentOptions) Spa
 
 	agentCmd, agentArgs := resolveAgentCommand(opts.AgentType, opts.Command, opts.Args)
 	if agentCmd == "" {
-		return SpawnResult{Success: false, Error: fmt.Sprintf("unsupported agent type: '%s'. Supported: claude-code, opencode, droid, gemini-cli, aider, codex, amp, continue", opts.AgentType)}
+		return SpawnResult{Success: false, Error: fmt.Sprintf("unsupported agent type: '%s'. Supported: claude-code, opencode, droid, gemini-cli, aider, codex, amp, continue, oh-my-pi", opts.AgentType)}
 	}
 
 	// Pre-check: verify command exists in PATH before attempting to spawn
@@ -615,6 +615,7 @@ func resolveAgentCommand(agentType, overrideCmd string, extraArgs []string) (str
 		"codex":       {cmd: "codex", args: []string{}},
 		"amp":         {cmd: "amp", args: []string{}},
 		"continue":    {cmd: "continue", args: []string{}},
+		"oh-my-pi":    {cmd: "omp", args: []string{}},
 	}
 
 	if cfg, ok := configs[agentType]; ok {
@@ -637,6 +638,7 @@ func getAgentInstallCommand(agentType, agentCmd string) string {
 		"codex":       "npm install -g codex",
 		"amp":         "npm install -g @amp/cli",
 		"continue":    "npm install -g continue",
+		"oh-my-pi":    "npm install -g oh-my-pi",
 	}
 	if cmd, ok := installs[agentType]; ok {
 		return cmd

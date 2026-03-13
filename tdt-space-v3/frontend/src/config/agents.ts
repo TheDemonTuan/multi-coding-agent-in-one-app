@@ -84,6 +84,13 @@ export const AGENT_CONFIGS: Record<string, AgentConfig> = {
     description: 'AWS AI coding assistant',
     defaultArgs: [],
   },
+  'oh-my-pi': {
+    type: 'oh-my-pi',
+    command: 'omp',
+    displayName: 'Oh My Pi',
+    description: 'Minimalist AI coding agent',
+    defaultArgs: [],
+  },
   'none': {
     type: 'none',
     command: '',
