@@ -346,9 +346,27 @@ goto :end
 :clean_bin
 if exist "bin" (
     echo %INFO% Cleaning bin directory...
-    rmdir /s /q bin
+    echo %INFO% Attempting to terminate running instances...
+    taskkill /f /im "TDT Space.exe" 2>nul || echo %INFO% No running instances found
+    timeout /t 1 /nobreak >nul 2>&1
+
+    REM Try to delete with retry logic
+    set "retryCount=0"
+    :retry_clean
+    rmdir /s /q bin 2>nul
+    if exist "bin" (
+        set /a retryCount+=1
+        if !retryCount! lss 3 (
+            echo %YELLOW% Directory locked, retrying... (attempt !retryCount!/3)
+            timeout /t 2 /nobreak >nul
+            goto :retry_clean
+        ) else (
+            echo %YELLOW% Warning: Could not fully clean bin directory (file in use)
+            echo %YELLOW% Build will continue, but may use stale files
+        )
+    )
 )
-mkdir bin
+if not exist "bin" mkdir bin
 goto :eof
 
 :end

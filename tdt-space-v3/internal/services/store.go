@@ -17,20 +17,13 @@ import (
 // StoreService — replaces electron-store + store.handlers.ts
 // ============================================================================
 
-// storeServiceDB manages persistent key-value storage using BuntDB.
-// This unexported type avoids naming conflicts with generated bindings.
-type storeServiceDB struct {
+// StoreService manages persistent key-value storage using BuntDB.
+type StoreService struct {
 	db *buntdb.DB
 	mu sync.RWMutex
 }
 
-// StoreService is an alias for the store implementation.
-// This allows other packages to reference *StoreService while avoiding
-// binding generation conflicts.
-type StoreService = storeServiceDB
-
-// NewStoreService creates and initializes the StoreService.
-func NewStoreService() *storeServiceDB {
+func NewStoreService() *StoreService {
 	configDir := platform.GetConfigDir()
 	dbPath := filepath.Join(configDir, "data.db")
 
@@ -60,17 +53,17 @@ func NewStoreService() *storeServiceDB {
 		AutoShrinkPercentage: 10,
 	})
 
-	return &storeServiceDB{db: db}
+return &StoreService{db: db}
 }
 
 // GetDB returns the underlying BuntDB instance.
-func (s *storeServiceDB) GetDB() *buntdb.DB {
+func (s *StoreService) GetDB() *buntdb.DB {
 	return s.db
 }
 
 // GetValue retrieves a JSON-decoded value by key.
 // Returns nil if key doesn't exist.
-func (s *storeServiceDB) GetValue(key string) interface{} {
+func (s *StoreService) GetValue(key string) interface{} {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -89,7 +82,7 @@ func (s *storeServiceDB) GetValue(key string) interface{} {
 }
 
 // SetValue stores a JSON-encoded value by key.
-func (s *storeServiceDB) SetValue(key string, value interface{}) Result {
+func (s *StoreService) SetValue(key string, value interface{}) Result {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -109,7 +102,7 @@ func (s *storeServiceDB) SetValue(key string, value interface{}) Result {
 }
 
 // DeleteValue removes a key from the store.
-func (s *storeServiceDB) DeleteValue(key string) Result {
+func (s *StoreService) DeleteValue(key string) Result {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -127,7 +120,7 @@ func (s *storeServiceDB) DeleteValue(key string) Result {
 }
 
 // GetByPrefix returns all key-value pairs with the given prefix.
-func (s *storeServiceDB) GetByPrefix(prefix string) map[string]interface{} {
+func (s *StoreService) GetByPrefix(prefix string) map[string]interface{} {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -146,7 +139,7 @@ func (s *storeServiceDB) GetByPrefix(prefix string) map[string]interface{} {
 }
 
 // SetRaw sets a raw string value (used internally by other services).
-func (s *storeServiceDB) SetRaw(key, value string) error {
+func (s *StoreService) SetRaw(key, value string) error {
 	return s.db.Update(func(tx *buntdb.Tx) error {
 		_, _, err := tx.Set(key, value, nil)
 		return err
@@ -154,7 +147,7 @@ func (s *storeServiceDB) SetRaw(key, value string) error {
 }
 
 // GetRaw gets a raw string value (used internally by other services).
-func (s *storeServiceDB) GetRaw(key string) (string, error) {
+func (s *StoreService) GetRaw(key string) (string, error) {
 	var val string
 	err := s.db.View(func(tx *buntdb.Tx) error {
 		var e error
@@ -165,7 +158,7 @@ func (s *storeServiceDB) GetRaw(key string) (string, error) {
 }
 
 // DeleteByPrefix removes all keys with the given prefix.
-func (s *storeServiceDB) DeleteByPrefix(prefix string) error {
+func (s *StoreService) DeleteByPrefix(prefix string) error {
 	var keys []string
 	s.db.View(func(tx *buntdb.Tx) error {
 		tx.AscendKeys(prefix+"*", func(key, _ string) bool {
@@ -184,7 +177,7 @@ func (s *storeServiceDB) DeleteByPrefix(prefix string) error {
 }
 
 // Close closes the BuntDB database.
-func (s *storeServiceDB) Close() {
+func (s *StoreService) Close() {
 	if s.db != nil {
 		s.db.Close()
 	}

@@ -62,10 +62,42 @@
   let lastLayoutSignature: string | null = null;
   let scrollDebounceTimeout: ReturnType<typeof setTimeout> | null = null;
 
+  // RAF write buffering for performance (prevents main thread blocking)
+  let writeBuffer = '';
+  let writeRafScheduled = false;
+  let writeRafId: number | null = null;
+  // Debounced command parsing to avoid parsing on every chunk
+  let commandParseTimeout: ReturnType<typeof setTimeout> | null = null;
+  let pendingCommandBuffer = '';
+
   // Command parsing state
   let commandBuffer = $state('');
   let lastPrompt = $state('');
 
+  // ============================================================================
+  // RAF-scheduled terminal write to prevent main thread blocking
+  // ============================================================================
+  function flushWriteBuffer() {
+    if (writeRafId !== null) {
+      cancelAnimationFrame(writeRafId);
+      writeRafId = null;
+    }
+    if (terminalInstance && writeBuffer.length > 0) {
+      terminalInstance.write(writeBuffer);
+      writeBuffer = '';
+    }
+    writeRafScheduled = false;
+  }
+
+  function scheduleTerminalWrite(data: string) {
+    writeBuffer += data;
+    if (!writeRafScheduled) {
+      writeRafScheduled = true;
+      writeRafId = requestAnimationFrame(() => {
+        flushWriteBuffer();
+      });
+    }
+  }
   // Theme
   const DARK_THEME = {
     background: '#1e1e2e',
@@ -161,6 +193,15 @@
     terminalInstance.loadAddon(searchAddon);
     terminalInstance.loadAddon(new WebLinksAddon());
     terminalInstance.open(terminalContainerRef);
+
+    // Allow Ctrl+B to propagate to window for sidebar toggle
+    terminalInstance.attachCustomKeyEventHandler((event: KeyboardEvent) => {
+      // Let Ctrl+B propagate to window handler
+      if (event.ctrlKey && (event.key === 'b' || event.key === 'B')) {
+        return false; // false = let browser handle it (propagate)
+      }
+      return true; // true = xterm.js handles it
+    });
 
     // Setup ResizeObserver to handle container resize
     setupResizeObserver();
@@ -469,23 +510,33 @@
     // Listen for terminal data from backend
     const unsubData = backendAPI.onTerminalData((event) => {
       if (event.terminalId === terminal.id && terminalInstance) {
-        terminalInstance.write(event.data);
+        // Use RAF-scheduled write to prevent main thread blocking
+        scheduleTerminalWrite(event.data);
 
-        // Parse commands from terminal output
-        commandBuffer += event.data;
-        const { isCommand, command } = parseCommandLine(commandBuffer);
-        if (isCommand && command) {
-          const historyStore = useTerminalHistoryStore.getState();
-          historyStore.addCommandBlock(terminal.id, {
-            id: `cmd_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-            terminalId: terminal.id,
-            command,
-            output: '',
-            status: 'running',
-            timestamp: Date.now(),
-          });
-          commandBuffer = '';
+        // Accumulate command buffer for parsing
+        pendingCommandBuffer += event.data;
+
+        // Debounce command parsing to avoid parsing on every chunk
+        if (commandParseTimeout) {
+          clearTimeout(commandParseTimeout);
         }
+        commandParseTimeout = setTimeout(() => {
+          commandBuffer += pendingCommandBuffer;
+          pendingCommandBuffer = '';
+          const { isCommand, command } = parseCommandLine(commandBuffer);
+          if (isCommand && command) {
+            const historyStore = useTerminalHistoryStore.getState();
+            historyStore.addCommandBlock(terminal.id, {
+              id: `cmd_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+              terminalId: terminal.id,
+              command,
+              output: '',
+              status: 'running',
+              timestamp: Date.now(),
+            });
+            commandBuffer = '';
+          }
+        }, 100);
 
         if (hasBeenActiveOnce && isWorkspaceActive && !isActive && !userScrolledUp) {
           unreadCount++;
@@ -539,6 +590,19 @@
       clearTimeout(scrollDebounceTimeout);
       scrollDebounceTimeout = null;
     }
+    // Clear RAF write buffer and cancel pending frame
+    if (writeRafId !== null) {
+      cancelAnimationFrame(writeRafId);
+      writeRafId = null;
+    }
+    writeBuffer = '';
+    writeRafScheduled = false;
+    // Clear command parse timeout
+    if (commandParseTimeout) {
+      clearTimeout(commandParseTimeout);
+      commandParseTimeout = null;
+    }
+    pendingCommandBuffer = '';
     unsubscribers.forEach(unsub => unsub());
     unsubscribers = [];
     terminalInstance?.dispose();
@@ -648,6 +712,30 @@
       syncPtySize(lastAppliedSize.cols, lastAppliedSize.rows);
     }
   });
+
+  // Track previous status to detect restart
+  let previousStatus = $state<string>('stopped');
+
+  $effect(() => {
+    const currentStatus = terminal.status;
+
+    // Detect transition from 'running' to 'stopped' (restart/kill)
+    if (currentStatus === 'stopped' && previousStatus === 'running') {
+      // Reset states to force re-fit on next spawn
+      hasStarted = false;
+      lastAppliedSize = null;
+      lastSyncedSize = null;
+      needsPtySync = false;
+
+      // Clear terminal to prevent duplicate text
+      if (terminalInstance) {
+        terminalInstance.clear();
+      }
+    }
+
+    previousStatus = currentStatus;
+  });
+
 </script>
 
 <div

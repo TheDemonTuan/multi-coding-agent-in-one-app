@@ -37,9 +37,8 @@ type ptyProcess struct {
 	workspaceID string // workspace this terminal belongs to
 }
 
-// terminalServiceDB manages all PTY processes.
-// This unexported type avoids naming conflicts with generated bindings.
-type terminalServiceDB struct {
+// TerminalService manages all PTY processes.
+type TerminalService struct {
 	app           *application.App
 	mu            sync.RWMutex
 	processes     map[string]*ptyProcess
@@ -52,10 +51,6 @@ type terminalServiceDB struct {
 	workspaceActive   map[string]bool // workspaceID -> active state
 }
 
-// TerminalService is an alias for the terminal implementation.
-// This allows other packages to reference *TerminalService while avoiding
-// binding generation conflicts.
-type TerminalService = terminalServiceDB
 
 var (
 	errPTYCloseTimeout        = errors.New("pty close timed out")
@@ -64,8 +59,8 @@ var (
 )
 
 // NewTerminalService creates a new TerminalService.
-func NewTerminalService() *terminalServiceDB {
-	return &terminalServiceDB{
+func NewTerminalService() *TerminalService {
+	return &TerminalService{
 		processes:       make(map[string]*ptyProcess),
 		pendingEvents:   make([]pendingEvent, 0),
 		workspaceActive: make(map[string]bool),
@@ -74,7 +69,7 @@ func NewTerminalService() *terminalServiceDB {
 
 // SetApplication sets the Wails application instance.
 // Called by App.ServiceStartup() when the application is ready.
-func (t *terminalServiceDB) SetApplication(app *application.App) {
+func (t *TerminalService) SetApplication(app *application.App) {
 	t.eventsMu.Lock()
 	t.app = app
 	hasPending := len(t.pendingEvents) > 0
@@ -86,12 +81,12 @@ func (t *terminalServiceDB) SetApplication(app *application.App) {
 }
 
 // getApp returns the current Wails application instance (may be nil before startup).
-func (t *terminalServiceDB) getApp() *application.App {
+func (t *TerminalService) getApp() *application.App {
 	return t.app
 }
 
 // emitEvent emits an event or queues it if application is not yet available.
-func (t *terminalServiceDB) emitEvent(eventName string, payload interface{}) {
+func (t *TerminalService) emitEvent(eventName string, payload interface{}) {
 	t.eventsMu.Lock()
 	defer t.eventsMu.Unlock()
 
@@ -111,7 +106,7 @@ func (t *terminalServiceDB) emitEvent(eventName string, payload interface{}) {
 
 // flushPendingEvents emits all queued events once application is available.
 // Must be called with eventsMu held or from a context where race is not possible.
-func (t *terminalServiceDB) flushPendingEvents() {
+func (t *TerminalService) flushPendingEvents() {
 	t.eventsMu.Lock()
 	defer t.eventsMu.Unlock()
 
@@ -144,7 +139,7 @@ type SpawnTerminalOptions struct {
 }
 
 // SpawnTerminal spawns a new PTY process.
-func (t *terminalServiceDB) SpawnTerminal(opts SpawnTerminalOptions) SpawnResult {
+func (t *TerminalService) SpawnTerminal(opts SpawnTerminalOptions) SpawnResult {
 	if opts.ID == "" {
 		return SpawnResult{Success: false, Error: "terminal ID is required"}
 	}
@@ -221,7 +216,7 @@ type SpawnAgentOptions struct {
 }
 
 // SpawnTerminalWithAgent spawns a PTY running an AI agent command.
-func (t *terminalServiceDB) SpawnTerminalWithAgent(opts SpawnAgentOptions) SpawnResult {
+func (t *TerminalService) SpawnTerminalWithAgent(opts SpawnAgentOptions) SpawnResult {
 	if opts.ID == "" {
 		return SpawnResult{Success: false, Error: "terminal ID is required"}
 	}
@@ -318,7 +313,7 @@ func (t *terminalServiceDB) SpawnTerminalWithAgent(opts SpawnAgentOptions) Spawn
 // ============================================================================
 
 // WriteToTerminal writes data to the terminal's PTY stdin.
-func (t *terminalServiceDB) WriteToTerminal(id string, data string) Result {
+func (t *TerminalService) WriteToTerminal(id string, data string) Result {
 	t.mu.RLock()
 	proc, ok := t.processes[id]
 	t.mu.RUnlock()
@@ -335,7 +330,7 @@ func (t *terminalServiceDB) WriteToTerminal(id string, data string) Result {
 }
 
 // ResizeTerminal resizes the PTY window.
-func (t *terminalServiceDB) ResizeTerminal(id string, cols, rows int) Result {
+func (t *TerminalService) ResizeTerminal(id string, cols, rows int) Result {
 	t.mu.RLock()
 	proc, ok := t.processes[id]
 	t.mu.RUnlock()
@@ -353,7 +348,7 @@ func (t *terminalServiceDB) ResizeTerminal(id string, cols, rows int) Result {
 }
 
 // KillTerminal kills the PTY process with the given ID.
-func (t *terminalServiceDB) KillTerminal(id string) KillResult {
+func (t *TerminalService) KillTerminal(id string) KillResult {
 	err := t.killProcess(id)
 	if err != nil {
 		return KillResult{Success: false, Error: err.Error()}
@@ -362,7 +357,7 @@ func (t *terminalServiceDB) KillTerminal(id string) KillResult {
 }
 
 // CleanupAllTerminals kills all active PTY processes.
-func (t *terminalServiceDB) CleanupAllTerminals() CleanupResult {
+func (t *TerminalService) CleanupAllTerminals() CleanupResult {
 	started := time.Now()
 
 	t.mu.Lock()
@@ -460,7 +455,7 @@ func (t *terminalServiceDB) CleanupAllTerminals() CleanupResult {
 }
 
 // GetTerminalStatus returns the current status of a terminal process.
-func (t *terminalServiceDB) GetTerminalStatus(id string) map[string]interface{} {
+func (t *TerminalService) GetTerminalStatus(id string) map[string]interface{} {
 	t.mu.RLock()
 	proc, exists := t.processes[id]
 	t.mu.RUnlock()
@@ -480,7 +475,7 @@ func (t *terminalServiceDB) GetTerminalStatus(id string) map[string]interface{} 
 }
 
 // CleanupWorkspaceTerminals kills terminals belonging to a specific workspace.
-func (t *terminalServiceDB) CleanupWorkspaceTerminals(workspaceID string) CleanupResult {
+func (t *TerminalService) CleanupWorkspaceTerminals(workspaceID string) CleanupResult {
 	t.mu.Lock()
 	var toKill []string
 	for id, proc := range t.processes {
@@ -506,7 +501,7 @@ func (t *terminalServiceDB) CleanupWorkspaceTerminals(workspaceID string) Cleanu
 // Internal helpers
 // ============================================================================
 
-func (t *terminalServiceDB) killProcess(id string) error {
+func (t *TerminalService) killProcess(id string) error {
 	t.mu.Lock()
 	proc, ok := t.processes[id]
 	if ok {
@@ -538,7 +533,7 @@ func (t *terminalServiceDB) killProcess(id string) error {
 			log.Printf("[ERROR] PTY.Close() failed for terminal %s: %v", id, closeErr)
 			killErrors = append(killErrors, fmt.Errorf("pty close failed: %w", closeErr))
 		}
-	case <-time.After(2 * time.Second):
+	case <-time.After(3 * time.Second):
 		log.Printf("[WARN] PTY.Close() timed out for terminal %s", id)
 		killErrors = append(killErrors, fmt.Errorf("%w: terminal %s", errPTYCloseTimeout, id))
 	}
@@ -563,7 +558,7 @@ func (t *terminalServiceDB) killProcess(id string) error {
 		}()
 		select {
 		case <-done:
-		case <-time.After(3 * time.Second):
+		case <-time.After(5 * time.Second):
 			log.Printf("[WARN] proc.cmd.Wait() timed out for terminal %s", id)
 			killErrors = append(killErrors, fmt.Errorf("%w: terminal %s", errProcessWaitTimeout, id))
 		}
@@ -596,7 +591,7 @@ func isTimeoutError(err error) bool {
 		errors.Is(err, errKillProcessTreeTimeout)
 }
 
-func (t *terminalServiceDB) readPTYOutput(ctx context.Context, proc *ptyProcess) {
+func (t *TerminalService) readPTYOutput(ctx context.Context, proc *ptyProcess) {
 	// Large buffer for TUI apps like Bubble Tea (opencode, codex)
 	// These apps send bursts of escape sequences that need large buffer
 	buf := make([]byte, 65536)
@@ -773,7 +768,7 @@ func getAgentDisplayName(agentType string) string {
 
 // SetWorkspaceActive sets whether a workspace is currently active (visible to user).
 // When inactive, terminal data is buffered instead of emitted to reduce CPU/memory usage.
-func (t *terminalServiceDB) SetWorkspaceActive(workspaceID string, active bool) {
+func (t *TerminalService) SetWorkspaceActive(workspaceID string, active bool) {
 	t.workspaceActiveMu.Lock()
 	t.workspaceActive[workspaceID] = active
 	t.workspaceActiveMu.Unlock()
@@ -792,7 +787,7 @@ func (t *terminalServiceDB) SetWorkspaceActive(workspaceID string, active bool) 
 }
 
 // IsWorkspaceActive returns whether a workspace is currently active.
-func (t *terminalServiceDB) IsWorkspaceActive(workspaceID string) bool {
+func (t *TerminalService) IsWorkspaceActive(workspaceID string) bool {
 	t.workspaceActiveMu.RLock()
 	defer t.workspaceActiveMu.RUnlock()
 
@@ -805,7 +800,7 @@ func (t *terminalServiceDB) IsWorkspaceActive(workspaceID string) bool {
 }
 
 // GetTerminalBacklog returns buffered data for a terminal when workspace becomes active.
-func (t *terminalServiceDB) GetTerminalBacklog(terminalID string) string {
+func (t *TerminalService) GetTerminalBacklog(terminalID string) string {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
 
@@ -818,7 +813,7 @@ func (t *terminalServiceDB) GetTerminalBacklog(terminalID string) string {
 }
 
 // ClearTerminalBacklog clears the backlog after it has been retrieved.
-func (t *terminalServiceDB) ClearTerminalBacklog(terminalID string) {
+func (t *TerminalService) ClearTerminalBacklog(terminalID string) {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
 

@@ -179,3 +179,38 @@ func (s *SystemService) ListDirectory(path string) DirectoryListing {
 
 	return DirectoryListing{Entries: result}
 }
+
+
+// ResolvePath resolves a path string to an absolute path.
+// Handles "cd " prefix, ~ expansion, relative paths, and path cleaning.
+// Returns empty string if the resolved path does not exist.
+func (s *SystemService) ResolvePath(path string) string {
+	// Handle "cd " prefix (strip it)
+	path = strings.TrimPrefix(path, "cd ")
+	path = strings.TrimSpace(path)
+
+	// Expand ~ to home directory
+	if strings.HasPrefix(path, "~") {
+		home := platform.GetUserHome()
+		path = filepath.Join(home, strings.TrimPrefix(path, "~"))
+	}
+
+	// Handle relative paths
+	if !filepath.IsAbs(path) {
+		cwd, err := os.Getwd()
+		if err != nil {
+			return ""
+		}
+		path = filepath.Join(cwd, path)
+	}
+
+	// Clean the path
+	path = filepath.Clean(path)
+
+	// Verify path exists
+	if _, err := os.Stat(path); err != nil {
+		return ""
+	}
+
+	return path
+}

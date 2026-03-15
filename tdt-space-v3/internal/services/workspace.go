@@ -28,9 +28,9 @@ func NewWorkspaceService() *WorkspaceService {
 }
 
 // Init wires store and terminal service dependencies.
-func (w *WorkspaceService) Init(store *StoreService, terminal *TerminalService) {
-	w.store = store
-	w.terminalSvc = terminal
+func (w *WorkspaceService) Init(store, terminal any) {
+	w.store = store.(*StoreService)
+	w.terminalSvc = terminal.(*TerminalService)
 }
 
 // GetWorkspaces returns all workspaces sorted by createdAt.
@@ -162,8 +162,8 @@ func NewTemplateService() *TemplateService {
 }
 
 // Init wires the store dependency.
-func (t *TemplateService) Init(store *StoreService) {
-	t.store = store
+func (t *TemplateService) Init(store any) {
+	t.store = store.(*StoreService)
 }
 
 // GetTemplates returns all saved templates sorted by createdAt.
@@ -230,9 +230,9 @@ func NewTerminalHistoryService() *TerminalHistoryService {
 	return &TerminalHistoryService{}
 }
 
-// Init wires the store dependency.
-func (h *TerminalHistoryService) Init(store *StoreService) {
-	h.store = store
+// Init stores the store dependency.
+func (h *TerminalHistoryService) Init(store any) {
+	h.store = store.(*StoreService)
 }
 
 // GetTerminalHistory returns command history for a terminal.

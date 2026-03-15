@@ -13,7 +13,7 @@ import { Application, Events, WML, Window } from '@wailsio/runtime';
 // @ts-ignore - Wails v3 generates JS only, no .d.ts files
 import * as App from '../../bindings/tdt-space/app';
 // @ts-ignore - Wails v3 generates JS only, no .d.ts files
-import * as TerminalServiceImpl from '../../bindings/tdt-space/internal/services/terminalservicedb';
+import * as TerminalService from '../../bindings/tdt-space/internal/services/terminalservice';
 // @ts-ignore - Wails v3 generates JS only, no .d.ts files
 import * as WorkspaceService from '../../bindings/tdt-space/internal/services/workspaceservice';
 // @ts-ignore - Wails v3 generates JS only, no .d.ts files
@@ -23,7 +23,7 @@ import * as SystemService from '../../bindings/tdt-space/internal/services/syste
 // @ts-ignore - Wails v3 generates JS only, no .d.ts files
 import * as VietnameseIMEService from '../../bindings/tdt-space/internal/services/vietnameseimeservice';
 // @ts-ignore - Wails v3 generates JS only, no .d.ts files
-import * as StoreServiceImpl from '../../bindings/tdt-space/internal/services/storeservicedb';
+import * as StoreService from '../../bindings/tdt-space/internal/services/storeservice';
 // @ts-ignore - Wails v3 generates JS only, no .d.ts files
 // @ts-ignore - Wails v3 generates JS only, no .d.ts files
 import { DialogOptions, SpawnTerminalOptions, SpawnAgentOptions, IMESettings } from '../../bindings/tdt-space/internal/services/models';
@@ -86,6 +86,7 @@ export interface BackendAPI {
   // File dialogs
   showOpenDialog(options: { title?: string; defaultPath?: string; buttonLabel?: string; properties?: string[] }): Promise<{ canceled: boolean; filePaths: string[] }>;
   listDirectory(path: string): Promise<{ entries: any[]; error?: string }>;
+  resolvePath(path: string): Promise<string>;
 
   // Workspace management
   getWorkspaces(): Promise<any[]>;
@@ -219,6 +220,12 @@ function createWailsBridge(): BackendAPI {
       };
     }, { entries: [], error: 'Failed to list directory' }),
 
+    resolvePath: (path) => safeCall(async () => {
+      // ResolvePath is a new method - bindings will be regenerated on next wails build
+      const result = await (SystemService as any).ResolvePath?.(path);
+      return result || '';
+    }, ''),
+
     getWorkspaces: () => {
       return safeCall(() => WorkspaceService.GetWorkspaces(), []);
     },
@@ -237,19 +244,19 @@ function createWailsBridge(): BackendAPI {
       return Promise.resolve(null);
     }, null),
     cleanupWorkspaceTerminals: (id) => safeCall(async () => {
-      const result = await TerminalServiceImpl.CleanupWorkspaceTerminals(id);
+      const result = await TerminalService.CleanupWorkspaceTerminals(id);
       return { success: result.success, cleaned: result.cleaned?.length };
     }, { success: false, cleaned: 0 }),
     setWorkspaceActive: (workspaceId, active) => safeCall(async () => {
-      await TerminalServiceImpl.SetWorkspaceActive(workspaceId, active);
+      await TerminalService.SetWorkspaceActive(workspaceId, active);
       return { success: true as boolean };
     }, { success: false } as { success: boolean }),
     getTerminalBacklog: (terminalId) => safeCall(async () => {
-      const backlog = await TerminalServiceImpl.GetTerminalBacklog(terminalId);
+      const backlog = await TerminalService.GetTerminalBacklog(terminalId);
       return { success: true as boolean, backlog: backlog || '' };
     }, { success: false, backlog: '' } as { success: boolean; backlog: string }),
     clearTerminalBacklog: (terminalId) => safeCall(async () => {
-      await TerminalServiceImpl.ClearTerminalBacklog(terminalId);
+      await TerminalService.ClearTerminalBacklog(terminalId);
       return { success: true as boolean };
     }, { success: false } as { success: boolean }),
 
@@ -266,7 +273,7 @@ function createWailsBridge(): BackendAPI {
     spawnTerminal: (id, cwd, workspaceId, cols, rows) =>
       safeCall(async () => {
         const opts = new SpawnTerminalOptions({ id, cwd, workspaceId, cols, rows });
-        const result = await TerminalServiceImpl.SpawnTerminal(opts);
+        const result = await TerminalService.SpawnTerminal(opts);
         return { success: result.success as boolean, pid: result.pid as number | undefined, error: result.error as string | undefined };
       }, { success: false, pid: undefined, error: 'TerminalService unavailable' }),
 
@@ -280,27 +287,27 @@ function createWailsBridge(): BackendAPI {
           cols,
           rows,
         });
-        const result = await TerminalServiceImpl.SpawnTerminalWithAgent(opts);
+        const result = await TerminalService.SpawnTerminalWithAgent(opts);
         return { success: result.success as boolean, pid: result.pid as number | undefined, error: result.error as string | undefined };
       }, { success: false, pid: undefined, error: 'TerminalService unavailable' }),
 
     terminalWrite:  (id, data)           => safeCall(async () => {
-      await TerminalServiceImpl.WriteToTerminal(id, data);
+      await TerminalService.WriteToTerminal(id, data);
       return { success: true as boolean, error: undefined as string | undefined };
     }, { success: false, error: 'TerminalService unavailable' }),
 
     terminalKill:   (id)                 => safeCall(async () => {
-      await TerminalServiceImpl.KillTerminal(id);
+      await TerminalService.KillTerminal(id);
       return { success: true as boolean, error: undefined as string | undefined };
     }, { success: false, error: 'TerminalService unavailable' }),
 
     terminalResize: (id, cols, rows)     => safeCall(async () => {
-      await TerminalServiceImpl.ResizeTerminal(id, cols, rows);
+      await TerminalService.ResizeTerminal(id, cols, rows);
       return { success: true as boolean };
     }, { success: false } as { success: boolean }),
 
     getTerminalStatus: (id)              => safeCall(async () => {
-      const status = await TerminalServiceImpl.GetTerminalStatus(id);
+      const status = await TerminalService.GetTerminalStatus(id);
       return { exists: status.exists ?? false, status: status.status ?? 'stopped', pid: status.pid as number | undefined };
     }, { exists: false, status: 'stopped', pid: undefined as number | undefined }),
 
@@ -388,6 +395,7 @@ function createStubBridge(): BackendAPI {
     deleteStoreValue: noop as any,
     showOpenDialog: () => Promise.resolve({ canceled: true, filePaths: [] }),
     listDirectory: () => Promise.resolve({ entries: [], error: 'Wails not available' }),
+    resolvePath: () => Promise.resolve(''),
     getWorkspaces:              noopArr,
     createWorkspace:            () => Promise.resolve(null),
     updateWorkspace:            () => Promise.resolve(null),

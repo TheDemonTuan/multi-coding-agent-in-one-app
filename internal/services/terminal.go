@@ -10,10 +10,12 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"tdt-space/internal/platform"
 
 	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
+	"golang.org/x/text/encoding/charmap"
 )
 
 // ============================================================================
@@ -37,12 +39,12 @@ type ptyProcess struct {
 
 // TerminalService manages all PTY processes.
 type TerminalService struct {
-	Ctx              context.Context // Set by App.startup()
-	mu               sync.RWMutex
-	processes        map[string]*ptyProcess
-	pendingEvents    []pendingEvent  // Queue for events when context is nil
-	eventsMu         sync.Mutex      // Protects pendingEvents
-	
+	Ctx           context.Context // Set by App.startup()
+	mu            sync.RWMutex
+	processes     map[string]*ptyProcess
+	pendingEvents []pendingEvent // Queue for events when context is nil
+	eventsMu      sync.Mutex     // Protects pendingEvents
+
 	// Workspace active state tracking (Option C: Hybrid background optimization)
 	workspaceActiveMu sync.RWMutex
 	workspaceActive   map[string]bool // workspaceID -> active state
@@ -444,21 +446,67 @@ func (t *TerminalService) readPTYOutput(ctx context.Context, proc *ptyProcess) {
 	// Increased buffer size for better handling of large output bursts
 	// This helps prevent text scrambling when ConPTY sends large chunks
 	buf := make([]byte, 16384)
+	// pendingBytes buffers incomplete UTF-8 sequences at buffer boundaries
+	// UTF-8 characters can be 1-4 bytes, so we need to handle partial reads
+	var pendingBytes []byte
+
 	for {
 		select {
 		case <-ctx.Done():
+			// Flush any remaining pending bytes before exit
+			if len(pendingBytes) > 0 {
+				utf8Data := convertToUTF8(pendingBytes)
+				proc.batcher.write([]byte(utf8Data))
+			}
 			return
 		default:
 		}
 
 		n, err := proc.pty.Read(buf)
 		if n > 0 {
-			data := make([]byte, n)
-			copy(data, buf[:n])
-			proc.batcher.write(data)
+			// Combine with any pending incomplete UTF-8 from previous read
+			data := append(pendingBytes, buf[:n]...)
+			pendingBytes = nil
+
+			// Find the last complete UTF-8 character boundary
+			// UTF-8 continuation bytes have pattern 10xxxxxx (0x80-0xBF)
+			// We scan backwards to find the start of the last complete character
+			validLen := len(data)
+			for validLen > 0 {
+				r, size := utf8.DecodeLastRune(data[:validLen])
+				if r != utf8.RuneError || size == 1 {
+					// Valid character or single byte error (not incomplete multi-byte)
+					break
+				}
+				// This is an incomplete UTF-8 sequence, step back one byte
+				validLen--
+			}
+
+			// Send valid complete UTF-8 data
+			if validLen > 0 {
+				sendData := make([]byte, validLen)
+				copy(sendData, data[:validLen])
+
+				// Convert to UTF-8 if needed (handles legacy encodings)
+				// This ensures frontend always receives valid UTF-8
+				utf8Data := convertToUTF8(sendData)
+				proc.batcher.write([]byte(utf8Data))
+			}
+
+			// Save incomplete bytes for next iteration (if any)
+			if validLen < len(data) {
+				pendingBytes = make([]byte, len(data)-validLen)
+				copy(pendingBytes, data[validLen:])
+			}
 		}
 		if err != nil {
 			// PTY closed, process has exited - emit terminal-exit
+			// Flush any remaining pending bytes before cleanup
+			if len(pendingBytes) > 0 {
+				utf8Data := convertToUTF8(pendingBytes)
+				proc.batcher.write([]byte(utf8Data))
+			}
+
 			t.mu.Lock()
 			delete(t.processes, proc.id)
 			t.mu.Unlock()
@@ -532,6 +580,73 @@ func filterEnv(env []string, keys ...string) []string {
 	return result
 }
 
+// ============================================================================
+// Charset Detection and Conversion
+// ============================================================================
+
+// convertToUTF8 attempts to detect and convert legacy character encodings to UTF-8.
+// This handles cases where applications output non-UTF-8 text (e.g., Windows-1252, ISO-8859-1).
+func convertToUTF8(data []byte) string {
+	// First, check if data is already valid UTF-8
+	if utf8.Valid(data) {
+		return string(data)
+	}
+
+	// Try to detect and convert common legacy encodings
+	// Order matters: try most common encodings first
+
+	// Windows-1252 (common on Windows systems)
+	if result, err := decodeWithEncoding(data, charmap.Windows1252); err == nil {
+		return result
+	}
+
+	// ISO-8859-1 (Latin-1, common in Western Europe)
+	if result, err := decodeWithEncoding(data, charmap.ISO8859_1); err == nil {
+		return result
+	}
+
+	// ISO-8859-15 (Latin-9, includes Euro sign)
+	if result, err := decodeWithEncoding(data, charmap.ISO8859_15); err == nil {
+		return result
+	}
+
+	// CP437 (DOS/OEM, sometimes used in legacy apps)
+	if result, err := decodeWithEncoding(data, charmap.CodePage437); err == nil {
+		return result
+	}
+
+	// If all else fails, use lossy conversion: replace invalid UTF-8 sequences
+	// with the Unicode replacement character (U+FFFD)
+	return string([]rune(string(data)))
+}
+
+// decodeWithEncoding attempts to decode data using the specified encoding.
+func decodeWithEncoding(data []byte, enc *charmap.Charmap) (string, error) {
+	decoder := enc.NewDecoder()
+	result, err := decoder.Bytes(data)
+	if err != nil {
+		return "", err
+	}
+	// Verify the result is valid UTF-8
+	if !utf8.Valid(result) {
+		return "", fmt.Errorf("decoded data is not valid UTF-8")
+	}
+	return string(result), nil
+}
+
+// isHighAsciiPresent checks if data contains high ASCII bytes (0x80-0xFF).
+// This is a quick heuristic to detect potential non-UTF-8 legacy encoding.
+func isHighAsciiPresent(data []byte) bool {
+	for _, b := range data {
+		if b >= 0x80 && b < 0xC0 {
+			// 0x80-0xBF are continuation bytes in UTF-8
+			// If we see these without a proper start byte, it might be legacy encoding
+			return true
+		}
+	}
+	return false
+}
+
 // resolveAgentCommand maps agent type to command + args.
 // Mirrors src/config/agents.ts AGENT_CONFIGS.
 func resolveAgentCommand(agentType, overrideCmd string, extraArgs []string) (string, []string) {
@@ -565,14 +680,14 @@ func resolveAgentCommand(agentType, overrideCmd string, extraArgs []string) (str
 // Helps users install missing agents with a single copy-paste command.
 func getAgentInstallCommand(agentType, agentCmd string) string {
 	installs := map[string]string{
-		"claude-code":  "bun install -g @anthropics/claude-code",
-		"opencode":     "bun install -g opencode-ai",
-		"droid":        "bun install -g @droid/cli",
-		"gemini-cli":   "npm install -g @anthropic-ai/gemini-cli",
-		"aider":        "pip install aider-chat",
-		"codex":        "npm install -g codex",
-		"amp":          "npm install -g @amp/cli",
-		"continue":     "npm install -g continue",
+		"claude-code": "bun install -g @anthropics/claude-code",
+		"opencode":    "bun install -g opencode-ai",
+		"droid":       "bun install -g @droid/cli",
+		"gemini-cli":  "npm install -g @anthropic-ai/gemini-cli",
+		"aider":       "pip install aider-chat",
+		"codex":       "npm install -g codex",
+		"amp":         "npm install -g @amp/cli",
+		"continue":    "npm install -g continue",
 	}
 	if cmd, ok := installs[agentType]; ok {
 		return cmd
@@ -608,7 +723,7 @@ func (t *TerminalService) SetWorkspaceActive(workspaceID string, active bool) {
 func (t *TerminalService) IsWorkspaceActive(workspaceID string) bool {
 	t.workspaceActiveMu.RLock()
 	defer t.workspaceActiveMu.RUnlock()
-	
+
 	// Default to true if not set (workspace is active by default)
 	active, exists := t.workspaceActive[workspaceID]
 	if !exists {

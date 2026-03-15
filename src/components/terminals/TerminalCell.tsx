@@ -14,6 +14,101 @@ import { TerminalSearch } from './TerminalSearch';
 import { parseOSC133, CommandBlockTracker } from '../../lib/osc133Parser';
 import { backendAPI, isWailsAvailable } from '../../services/wails-bridge';
 
+// ============================================================================
+// Input Queue Manager - Batches input to reduce IPC calls
+// ============================================================================
+class InputQueueManager {
+  private buffer: string[] = [];
+  private flushTimer: NodeJS.Timeout | null = null;
+  private readonly flushInterval: number = 16; // ~60fps
+  private sendFn: (data: string) => void;
+
+  constructor(sendFn: (data: string) => void) {
+    this.sendFn = sendFn;
+  }
+
+  enqueue(data: string): void {
+    // Normalize Unicode to NFC (composed form) for consistent handling
+    const normalized = data.normalize('NFC');
+    this.buffer.push(normalized);
+
+    if (!this.flushTimer) {
+      this.flushTimer = setTimeout(() => {
+        this.flush();
+      }, this.flushInterval);
+    }
+  }
+
+  flush(): void {
+    if (this.flushTimer) {
+      clearTimeout(this.flushTimer);
+      this.flushTimer = null;
+    }
+
+    if (this.buffer.length > 0) {
+      const batch = this.buffer.join('');
+      this.buffer = [];
+      this.sendFn(batch);
+    }
+  }
+
+  clear(): void {
+    if (this.flushTimer) {
+      clearTimeout(this.flushTimer);
+      this.flushTimer = null;
+    }
+    this.buffer = [];
+  }
+
+  destroy(): void {
+    this.clear();
+  }
+}
+
+// ============================================================================
+// IME Composition Handler - Manages IME composition state
+// ============================================================================
+class IMECompositionHandler {
+  private isComposing = false;
+  private compositionData = '';
+  private sendFn: (data: string) => void;
+
+  constructor(sendFn: (data: string) => void) {
+    this.sendFn = sendFn;
+  }
+
+  onCompositionStart(): void {
+    this.isComposing = true;
+    this.compositionData = '';
+  }
+
+  onCompositionUpdate(data: string): void {
+    this.compositionData = data;
+  }
+
+  onCompositionEnd(data: string): void {
+    this.isComposing = false;
+    const finalData = data || this.compositionData;
+    if (finalData) {
+      // Normalize to NFC before sending
+      this.sendFn(finalData.normalize('NFC'));
+    }
+    this.compositionData = '';
+  }
+
+  shouldSend(data: string): boolean {
+    // Don't send data during composition - wait for compositionend
+    if (this.isComposing) {
+      return false;
+    }
+    return true;
+  }
+
+  isInComposition(): boolean {
+    return this.isComposing;
+  }
+}
+
 // Theme constants - VS Code / xterm.js recommended dark terminal colors
 const DARK_THEME = {
   background: '#1e1e1e',
@@ -147,6 +242,10 @@ export const TerminalCell = React.memo<TerminalCellProps>(({
   // FPS capping for terminal writes (Option C: Balanced)
   // Limit to max 30 writes/sec to prevent overwhelming xterm.js during data floods
   const MAX_WRITES_PER_SECOND = 30;
+
+  // Input queue and IME composition handler refs
+  const inputQueueRef = useRef<InputQueueManager | null>(null);
+  const imeHandlerRef = useRef<IMECompositionHandler | null>(null);
   const pendingWriteBufferRef = useRef<string[]>([]);
   const lastWriteTimeRef = useRef<number>(0);
   const writeTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -500,7 +599,7 @@ export const TerminalCell = React.memo<TerminalCellProps>(({
     const term = new Terminal({
       cursorBlink: true,
       fontSize: 14,
-      fontFamily: '"Cascadia Code", "Fira Code", Consolas, "Courier New", monospace',
+      fontFamily: '"Cascadia Code", "Fira Code", Consolas, "Courier New", "Segoe UI", "Arial Unicode MS", "Noto Sans CJK SC", sans-serif',
       allowProposedApi: true,
       // Configure scrollback buffer to prevent memory bloat (VAL-PERF-002)
       scrollback: 300, // Balanced: reduced from 500 to 300 lines for optimal memory/performance
@@ -792,9 +891,42 @@ export const TerminalCell = React.memo<TerminalCellProps>(({
       }
     });
 
-    // Store onData handler disposable (VAL-MEM-004)
-    xtermDisposablesRef.current.onDataDisposable = term.onData((data: string) => {
+    // Initialize input queue and IME composition handler
+    inputQueueRef.current = new InputQueueManager((data: string) => {
       backendAPI.terminalWrite(terminal.id, data);
+    });
+    imeHandlerRef.current = new IMECompositionHandler((data: string) => {
+      inputQueueRef.current?.enqueue(data);
+    });
+
+    // Register composition event handlers for IME support (Vietnamese, Chinese, Japanese, etc.)
+    // These handlers properly manage composition state to prevent sending incomplete characters
+    const handleCompositionStart = () => {
+      imeHandlerRef.current?.onCompositionStart();
+    };
+    
+    const handleCompositionUpdate = (e: { data: string }) => {
+      imeHandlerRef.current?.onCompositionUpdate(e.data);
+    };
+    
+    const handleCompositionEnd = (e: { data: string }) => {
+      imeHandlerRef.current?.onCompositionEnd(e.data);
+    };
+
+    // Type assertion needed because xterm.js types may not include composition events
+    (term as any).onCompositionStart?.(handleCompositionStart);
+    (term as any).onCompositionUpdate?.(handleCompositionUpdate);
+    (term as any).onCompositionEnd?.(handleCompositionEnd);
+
+    // Store onData handler disposable (VAL-MEM-004)
+    // Modified to use input queue and respect composition state
+    xtermDisposablesRef.current.onDataDisposable = term.onData((data: string) => {
+      // Check if we're in IME composition - if so, don't send data yet
+      if (imeHandlerRef.current?.isInComposition()) {
+        return;
+      }
+      // Normalize Unicode to NFC and enqueue for batched sending
+      inputQueueRef.current?.enqueue(data);
     });
 
 
@@ -938,6 +1070,15 @@ export const TerminalCell = React.memo<TerminalCellProps>(({
       }
 
       listenersRef.current = {};
+
+      // Flush and destroy input queue
+      if (inputQueueRef.current) {
+        inputQueueRef.current.destroy();
+        inputQueueRef.current = null;
+      }
+
+      // Clear IME handler
+      imeHandlerRef.current = null;
 
 
       // Kill PTY process BEFORE disposing UI terminal

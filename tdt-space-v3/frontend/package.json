@@ -22,22 +22,22 @@
     "wails:build:all": "cd .. && task build"
   },
   "dependencies": {
-    "@wailsio/runtime": "latest",
-    "@xterm/addon-clipboard": "latest",
-    "@xterm/addon-fit": "latest",
-    "@xterm/addon-search": "latest",
-    "@xterm/addon-web-links": "latest",
-    "@xterm/addon-webgl": "latest",
-    "@xterm/xterm": "latest",
-    "svelte": "^5.0.0"
+    "@wailsio/runtime": "^3.0.0-alpha.79",
+    "@xterm/addon-clipboard": "beta",
+    "@xterm/addon-fit": "beta",
+    "@xterm/addon-search": "beta",
+    "@xterm/addon-web-links": "beta",
+    "@xterm/addon-webgl": "beta",
+    "@xterm/xterm": "beta",
+    "svelte": "^5.53.12"
   },
   "devDependencies": {
-    "@sveltejs/vite-plugin-svelte": "^5.0.0",
+    "@sveltejs/vite-plugin-svelte": "^5.1.1",
     "@tsconfig/svelte": "^5.0.8",
-    "@types/node": "^25.3.5",
+    "@types/node": "^25.5.0",
     "lightningcss": "^1.32.0",
     "rollup-plugin-visualizer": "^7.0.1",
-    "svelte-check": "^4.0.0",
+    "svelte-check": "^4.4.5",
     "terser": "^5.46.0",
     "typescript": "~5.9.3",
     "vite": "^7.3.1"

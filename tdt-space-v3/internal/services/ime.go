@@ -46,8 +46,8 @@ func NewVietnameseIMEService() *VietnameseIMEService {
 }
 
 // Init wires the store dependency.
-func (v *VietnameseIMEService) Init(store *StoreService) {
-	v.store = store
+func (v *VietnameseIMEService) Init(store any) {
+	v.store = store.(*StoreService)
 }
 
 // FindClaudePath locates the Claude Code CLI binary using configurable strategies.

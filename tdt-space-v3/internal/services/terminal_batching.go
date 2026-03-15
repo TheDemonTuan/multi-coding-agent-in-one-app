@@ -11,17 +11,18 @@ import (
 // ============================================================================
 // Terminal Data Batching — optimizes xterm.js rendering
 // ============================================================================
-// Batches PTY output: flush every 12ms (~83fps) OR when buffer >= 16384 bytes.
-// Optimized for Option C: Balanced - faster flush with larger batch size
-// to reduce overhead while maintaining responsiveness.
+// Batches PTY output: flush every 33ms (~30fps) OR when buffer >= 8192 bytes.
+// Tuned to reduce main thread blocking and prevent UI freeze during heavy output.
+// Smaller batches at lower frequency trade slight throughput for responsiveness.
 // Data is passed as string which Wails serializes as a JSON string.
 // Buffers data when context is nil and flushes when context becomes available.
 // ============================================================================
+// ============================================================================
 
 const (
-	batchFlushInterval  = 16 * time.Millisecond // ~60fps - standard terminal refresh rate
-	batchMaxSize        = 32768                 // 32KB - larger for TUI burst output
-	maxBufferedDataSize = 1024 * 1024           // 1MB max buffered data for TUI apps
+	batchFlushInterval  = 33 * time.Millisecond // ~30fps - reduced from 60fps to lower main thread load
+	batchMaxSize        = 8192                  // 8KB - reduced from 32KB to avoid jank
+	maxBufferedDataSize = 512 * 1024            // 512KB - reduced from 1MB to lower memory pressure
 	// Background workspace optimization
 	backgroundBufferMaxSize = 256 * 1024       // 256KB max for background terminals
 	backgroundBufferTTL     = 30 * time.Second // TTL for background buffered data

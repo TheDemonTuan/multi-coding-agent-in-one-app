@@ -7,9 +7,10 @@
     onCreateWorkspace: () => void;
     onOpenSettings: () => void;
     sidebarVisible?: boolean;
+    isHoverOpen?: boolean;
   }
 
-  let { onCreateWorkspace, onOpenSettings, sidebarVisible = true }: Props = $props();
+  let { onCreateWorkspace, onOpenSettings, sidebarVisible = true, isHoverOpen = false }: Props = $props();
 
   // Local state
   let contextMenu = $state<{ x: number; y: number; workspaceId: string } | null>(null);
@@ -99,7 +100,17 @@
 
 <svelte:window onkeydown={handleKeyDown} />
 
-<aside class="sidebar" class:dark={theme === 'dark'} class:hidden={!sidebarVisible}>
+<aside
+  class="sidebar"
+  class:dark={theme === 'dark'}
+  class:hidden={!sidebarVisible}
+  class:hover-open={isHoverOpen}
+  onmouseleave={() => {
+    if (isHoverOpen) {
+      window.dispatchEvent(new CustomEvent('sidebar-hover-leave'));
+    }
+  }}
+>
   <!-- Sidebar Header -->
   <div class="sidebar-header">
     <div class="logo">
@@ -332,6 +343,15 @@
     min-width: 0;
     border-right: none;
     opacity: 0;
+  }
+
+  .sidebar.hover-open {
+    position: fixed;
+    left: 0;
+    top: 0;
+    height: 100%;
+    z-index: var(--z-overlay, 100);
+    box-shadow: var(--shadow-xl);
   }
 
   .sidebar-header {

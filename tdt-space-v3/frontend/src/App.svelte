@@ -19,6 +19,10 @@
   let settingsModalOpen = $state(false);
   let appVersion = $state('');
 
+  // Hover sidebar state
+  let sidebarHoverOpen = $state(false);
+  let sidebarHoverTimeout = $state<ReturnType<typeof setTimeout> | null>(null);
+
   // Derived state
   let theme = $derived(workspaceStore.theme);
   let workspace = $derived(workspaceStore.currentWorkspace);
@@ -58,15 +62,15 @@
 
   // Keyboard shortcuts handler
   function handleKeyDown(e: KeyboardEvent) {
+    // Don't trigger shortcuts when typing in input fields
+    if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
+      return;
+    }
+
     // Toggle sidebar with Ctrl+B
     if (e.ctrlKey && (e.key === 'b' || e.key === 'B')) {
       e.preventDefault();
       workspaceStore.toggleSidebar();
-      return;
-    }
-
-    // Don't trigger shortcuts when typing in input fields
-    if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
       return;
     }
 
@@ -216,10 +220,17 @@
     };
     window.addEventListener('open-workspace-switcher', handleOpenWorkspaceSwitcher);
 
+    // Listen for sidebar hover leave to close hover-opened sidebar
+    const handleSidebarHoverLeave = () => {
+      sidebarHoverOpen = false;
+    };
+    window.addEventListener('sidebar-hover-leave', handleSidebarHoverLeave);
+
     return () => {
       MemoryMonitor.stopMonitoring();
       clearTimeout(initialStatsTimeout);
       window.removeEventListener('open-workspace-switcher', handleOpenWorkspaceSwitcher);
+      window.removeEventListener('sidebar-hover-leave', handleSidebarHoverLeave);
     };
   });
 </script>
@@ -238,15 +249,19 @@
     <Sidebar
       onCreateWorkspace={handleCreateWorkspace}
       onOpenSettings={handleOpenSettings}
-      sidebarVisible={sidebarVisible}
+      sidebarVisible={sidebarVisible || sidebarHoverOpen}
+      isHoverOpen={sidebarHoverOpen}
     />
-
     <!-- Edge Handle / Sidebar Rail (shown when sidebar is hidden) -->
-    {#if !sidebarVisible}
+    {#if !sidebarVisible && !sidebarHoverOpen}
       <div
         class="sidebar-edge-handle"
         onclick={() => workspaceStore.toggleSidebar()}
         onkeydown={(e) => e.key === 'Enter' && workspaceStore.toggleSidebar()}
+        onmouseenter={() => {
+          if (sidebarHoverTimeout) clearTimeout(sidebarHoverTimeout);
+          sidebarHoverOpen = true;
+        }}
         role="button"
         tabindex="0"
         title="Show Sidebar (Ctrl+B)"
